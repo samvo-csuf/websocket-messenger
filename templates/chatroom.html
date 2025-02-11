@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="/static/stylesheet/styles.css">
+    <title>SecureChat Chatroom</title>
+</head>
+<body class="chat-room">
+    <h1>Chat Room: </h1>
+    <div id="chat-box">
+
+    </div>
+        <form action="/send_message" method="post">
+        <ul>
+            <li>
+                <label for="message">Message: </label>
+                <input type="text" id="message" name="message" placeholder="Enter your message">
+            </li>
+        </ul>
+        <button id="send-btn">Send</button>
+        </form>
+    
+    <script>
+        const socket = new WebSocket('ws://127.0.0.1:8000/ws')
+
+        socket.onopen = function(event) {
+            console.log("Connection established to WebSocket server")   
+        };
+
+        //Create a new message element and append it to the chat box
+        socket.onmessage = function(event) {
+            const chat_box = document.getElementById('chat-box');
+            const new_message = document.createElement('div');
+            new_message.textContent = event.data;
+            chat_box.appendChild(new_message);
+        };
+
+        //Handles errors in the WebSocket connection
+        socket.onerror = function(error) {
+            console.error("Websocket error:", error);
+        };
+
+        //Handles the closing of the WebSocket connection
+        socket.onclose = function(event) {
+            console.log("Connection to WebSocket server closed");
+        };
+
+        //Send message to the WebSocket server
+        const send_button = document.getElementById('send-btn').addEventListener('click', (event) => {
+            event.preventDefault();
+            const messageInput = document.getElementById('message');  
+            const message_text = messageInput.value;
+            socket.send(message_text);
+            messageInput.value = ''; //Clears input after sending message
+        });
+        
+
+
+    </script>
+</body>
+
+</html>
