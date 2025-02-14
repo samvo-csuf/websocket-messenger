@@ -14,7 +14,7 @@
         
         <ul>
             <label for="username">Username: </label>
-            <input type="text" id="username" name="username" value="{{username}}" placeholder="Enter your username">
+            <input type="text" id="username" name="username" placeholder="Enter your username">
         </ul>
       
         <ul>
@@ -24,6 +24,10 @@
 
         <button type="submit" id="login">Login</button>
     </form>
+    <br>
+    {% if error %}
+        <p style="color: red;">{{ error }}</p>
+    {% endif %}
 
 </body>
 

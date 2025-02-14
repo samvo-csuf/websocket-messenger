@@ -22,6 +22,10 @@
         </ul>
         <button type="submit" id="signup">Sign Up</button>
         <p>Already have an account? <a href="/login">Login here</a></p>
+    </form>
+    {% if error %}
+        <p style="color: red;">{{ error }}</p>
+    {% endif %}
 
 </body>
 </html>
