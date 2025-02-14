@@ -13,3 +13,10 @@
 
 5. 
 
+
+
+
+
+# NOTES
+# Was able to get two devices to communicate over the same network, but the only issue was that it required disabling Windows Defender Firewall for it to work. 
+# There is another security issue with 
