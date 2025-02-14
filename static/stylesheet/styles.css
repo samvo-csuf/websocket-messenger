@@ -53,5 +53,31 @@ input{
     border-radius: 5px;
 }
 
+.chat-room{
+    height: 300px;
+    overflow-y: scroll;
+    border: 1px solid #ccc;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    margin: 0;
+}
+
+#chat-box{
+    width: 80%;
+    max-width: 600px;
+    height: 300px;
+    border: 1px solid #ccc;
+    padding: 10px;
+    overflow-y: auto;
+    margin-bottom: 20px;
+    border-radius: 5px;
+    background-color: beige;
+}
+
+
+
 
 
