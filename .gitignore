@@ -1,1 +1,3 @@
 /venv
+*key.pem
+*cert.pem
