@@ -1,13 +1,11 @@
 # websocket-messenger
-
-# 
-
-# Author: Samuel Vo
-# CPSC 455-02
-# Credit: Usage of AI(ChatGPT, Claude) were used for assistance
-# Also used some FastAPI websockets documentation for reference
-# https://fastapi.tiangolo.com/advanced/websockets/#await-for-messages-and-send-messages
-# https://fastapi.tiangolo.com/advanced/templates/#using-jinja2templates
+ 
+ Author: Samuel Vo
+ CPSC 455-02
+ Credit: Usage of AI(ChatGPT, Claude) were used for assistance
+ Also used some FastAPI websockets documentation for reference
+ https://fastapi.tiangolo.com/advanced/websockets/#await-for-messages-and-send-messages
+ https://fastapi.tiangolo.com/advanced/templates/#using-jinja2templates
 
 # Instructions to run SecureChat
 
@@ -23,6 +21,7 @@
 
 5. You must also generate a certificate and key file using openssl command and store it in the secure_chat folder to be used with the program. 
 - Run this openssl command "openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes"
+- Recommend to keep the names "key.pem" and "cert.pem" to be consistent with the program setup. 
 
 6. Once everything is configured and set up then activate the virtual environment then run command "python run.py"
 
