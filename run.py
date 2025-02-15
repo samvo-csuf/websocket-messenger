@@ -3,6 +3,7 @@ from secure_chat.main import create_app
 import ssl
 import socket
 
+#Use socket to find local ip address, if it doesn't work then default to localhost ip
 def get_local_ip():
     try:
         # Create a socket to get local IP
