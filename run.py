@@ -1,29 +1,6 @@
 import uvicorn
 from secure_chat.main import create_app
 import ssl
-
-#import asyncio
-#from secure_chat.server import start_server
-
-#app = create_app()
-
-#async def main():
-#    
-#    websock_task = asyncio.create_task(start_server())
-#    uvicorn_task = asyncio.create_task(uvicorn_server())
-#
-#    await asyncio.gather(websock_task, uvicorn_task) #run both servers concurrently
-#
-#async def uvicorn_server(): 
-#    config = uvicorn.Config("secure_chat.main:create_app", host="0.0.0.0", port=8000, reload=True)
-#    server = uvicorn.Server(config) 
-#    await server.serve()
-#
-#if __name__ == "__main__":
-#
-#    #Start both servers
-#    asyncio.run(main())
-
 import socket
 
 def get_local_ip():
