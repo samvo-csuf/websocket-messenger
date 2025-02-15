@@ -1,8 +1,9 @@
 # websocket-messenger
+#DOCUMENTATION
  
  Author: Samuel Vo
  CPSC 455-02
- Credit: Usage of AI(ChatGPT, Claude) were used for assistance
+ Credit: Usage of AI(ChatGPT, Claude) were used for assistance and better understanding of topics
  Also used some FastAPI websockets documentation for reference:
  - https://fastapi.tiangolo.com/advanced/websockets/#await-for-messages-and-send-messages
  - https://fastapi.tiangolo.com/advanced/templates/#using-jinja2templates
@@ -35,4 +36,5 @@
 # IMPORTANT NOTES
 - Was able to get two devices to communicate over the same network, but the only issue was that it required disabling Windows Defender Firewall for it to work. 
  - I also was not able to figure out and implement the Connection Handling Feature because I was having so much issues. Therefore, I left it out on this iteration. However, I will continue to work on it and try to implement it into my program in the future iteration. 
-- 
+ - All changelog commit history is in the github url at the top and add /commits at the end to see the history
+ - I don't know how my personal account got into collaboration when I was signed in my school account the whole time, but I worked on the project solo. There was no anonymous contributor or anything, just my 2 accounts. 
