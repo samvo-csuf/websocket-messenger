@@ -26,8 +26,6 @@
         const serverPort = '8080';
         
         socket = new WebSocket(`wss://${serverAddress}:${serverPort}/ws`);
-        //const socket = new WebSocket('wss://172.58.115.132:8765/ws')
-        //const socket = new WebSocket('ws://' + window.location.host + ':8765/ws');
 
         socket.onopen = function(event) {
             console.log("Connection established to WebSocket server")   
@@ -61,88 +59,7 @@
             messageInput.value = ''; //Clears input after sending message
         });
     </script>
-<!--
-/*
-   //     let socket;
-   //     let reconnectAttempts = 0;
-   //     const maxReconnectAttempts = 3;
-//
-   // function connectWebSocket() {
-   //     // Get the current hostname or IP from the browser's location
-   //     const serverAddress = window.location.hostname;
-   //     const serverPort = '8080';
-   //     
-   //     socket = new WebSocket(`wss://${serverAddress}:${serverPort}/ws`);
-//
-   //     socket.onopen = function(event) {
-   //         console.log("Connection established to WebSocket server");
-   //         reconnectAttempts = 0;  // Reset reconnect attempts on successful connection
-   //         
-   //         // Add a visible indicator that connection is successful
-   //         const statusDiv = document.getElementById('connection-status');
-   //         if (statusDiv) {
-   //             statusDiv.textContent = "Connected to chat server";
-   //             statusDiv.style.color = "green";
-    //        }
-    //    };
-//
-    //    socket.onmessage = function(event) {
-    //        const chat_box = document.getElementById('chat-box');
-    //        const new_message = document.createElement('div');
-    //        new_message.textContent = event.data;
-    //        chat_box.appendChild(new_message);
-    //        // Auto-scroll to bottom
-    //        chat_box.scrollTop = chat_box.scrollHeight;
-    //    };
-//
-    //    socket.onerror = function(error) {
-    //        console.error("WebSocket error:", error);
-    //        const statusDiv = document.getElementById('connection-status');
-    //        if (statusDiv) {
-    //            statusDiv.textContent = "Connection error. Please check your network.";
-    //            statusDiv.style.color = "red";
-    //        }
-    //    };
-//
-    //    socket.onclose = function(event) {
-    //        console.log("Connection to WebSocket server closed");
-    //        const statusDiv = document.getElementById('connection-status');
-    //        if (statusDiv) {
-    //            statusDiv.textContent = "Disconnected from server";
-    //            statusDiv.style.color = "red";
-    //        }
-//
-    //        // Attempt to reconnect
-    //        if (reconnectAttempts < maxReconnectAttempts) {
-    //            reconnectAttempts++;
-    //            console.log(`Attempting to reconnect... (${reconnectAttempts}/${maxReconnectAttempts})`);
-    //            setTimeout(connectWebSocket, 3000);  // Try to reconnect after 3 seconds
-    //        }
-    //    };
-    //}
-//
-    //// Add this div to your HTML body
-    //document.body.insertAdjacentHTML('afterbegin', '<div id="connection-status"></div>');
-//
-    //// Initial connection
-    //connectWebSocket();
-//
-    //const send_button = document.getElementById('send-btn');
-    //send_button.addEventListener('click', (event) => {
-    //    event.preventDefault();
-    //    const messageInput = document.getElementById('message');
-    //    const message_text = messageInput.value;
-    //    if (message_text.trim() && socket.readyState === WebSocket.OPEN) {
-    //        socket.send(message_text);
-    //        messageInput.value = '';
-    //    } else if (socket.readyState !== WebSocket.OPEN) {
-    //        alert("Not connected to chat server. Please wait for reconnection.");
-    //    }
-    //});
 
-    -->
+
 </body>
-
-
-
 </html>
