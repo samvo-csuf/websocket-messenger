@@ -3,15 +3,15 @@
  Author: Samuel Vo
  CPSC 455-02
  Credit: Usage of AI(ChatGPT, Claude) were used for assistance
- Also used some FastAPI websockets documentation for reference
- https://fastapi.tiangolo.com/advanced/websockets/#await-for-messages-and-send-messages
- https://fastapi.tiangolo.com/advanced/templates/#using-jinja2templates
+ Also used some FastAPI websockets documentation for reference:
+ - https://fastapi.tiangolo.com/advanced/websockets/#await-for-messages-and-send-messages
+ - https://fastapi.tiangolo.com/advanced/templates/#using-jinja2templates
 
 # Instructions to run SecureChat
 
 1. First clone the repo
 
-2. Setup a local PostgreSQL Database and edit the .env file with your database configurations
+2. Setup a local PostgreSQL Database and edit the .env.text back to .env file with your database configurations
 - Create a database and name it anything you want. Remember to include the username, password, and the default port is 5432.
 
 3. Set up a virtual environment by running "python -m venv venv" command.
@@ -29,6 +29,6 @@
 
 
 
-# NOTES
-# Was able to get two devices to communicate over the same network, but the only issue was that it required disabling Windows Defender Firewall for it to work. 
-# I also was not able to figure out and implement the Connection Handling Feature because I was having so much issues. Therefore, I left it out on this iteration. However, I will continue to work on it and try to implement it into my program in the future iteration. 
+# IMPORTANT NOTES
+- Was able to get two devices to communicate over the same network, but the only issue was that it required disabling Windows Defender Firewall for it to work. 
+ - I also was not able to figure out and implement the Connection Handling Feature because I was having so much issues. Therefore, I left it out on this iteration. However, I will continue to work on it and try to implement it into my program in the future iteration. 
