@@ -11,6 +11,7 @@ from slowapi import Limiter
 from secure_chat.limiter import limiter
 import time
 import asyncio
+import json
 
 
 #Instantiate router
@@ -112,5 +113,4 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect: #Handle disconnection
         clients_connected.remove(websocket) #Remove disconnected client
         print(f"Client disconnected")
-
 
