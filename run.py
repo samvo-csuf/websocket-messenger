@@ -35,7 +35,7 @@ if __name__ == "__main__":
         port=8080,  # Changed to match WebSocket port
         ssl_keyfile="secure_chat/key.pem",
         ssl_certfile="secure_chat/cert.pem",
-        reload=True
+        reload=False
     )
     
     server = uvicorn.Server(config)
