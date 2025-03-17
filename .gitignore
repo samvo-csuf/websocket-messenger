@@ -2,3 +2,4 @@
 *key.pem
 *cert.pem
 /*.env
+secure_chat/__pycache__/
