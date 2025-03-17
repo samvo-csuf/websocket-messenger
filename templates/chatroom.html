@@ -7,11 +7,11 @@
     <title>SecureChat Chatroom</title>
 </head>
 <body class="chat-room">
-    <h1>Chat Room: </h1>
+    <h1>Chat Room: Welcome!</h1>
     <div id="chat-box">
-
+        <!-- All messages, including status, errors, appear hear -->
     </div>
-        <form action="/send_message" method="post">
+        <form id="message-form">
         <ul>
                 <label for="message">Message: </label>
                 <input type="text" id="message" name="message" placeholder="Enter your message">
@@ -21,43 +21,140 @@
     
 
     <script>
-        // Get the current hostname or IP from the browser's location
-        const serverAddress = window.location.hostname;
-        const serverPort = '8080';
-        
-        socket = new WebSocket(`wss://${serverAddress}:${serverPort}/ws`);
-
-        socket.onopen = function(event) {
-            console.log("Connection established to WebSocket server")   
-        };
-
-        //Create a new message element and append it to the chat box
-        socket.onmessage = function(event) {
-            const chat_box = document.getElementById('chat-box');
-            const new_message = document.createElement('div');
-            new_message.textContent = event.data;
-            chat_box.appendChild(new_message);
+        //Get username from URL query parameter
+        const urlParams = new URLSearchParams(window.location.search);
+        const username = urlParams.get('username');
+        if(!username){
+            window.location.href = "/login";
         }
 
-                //Handles errors in the WebSocket connection
-                socket.onerror = function(error) {
-            console.error("Websocket error:", error);
-        };
+        //document.getElementById('username').textContent = 'username';
 
-        //Handles the closing of the WebSocket connection
-        socket.onclose = function(event) {
-            console.log("Connection to WebSocket server closed");
+        // Get the current hostname or IP from the browser's location
+        const serverAddress = window.location.hostname;
+        const serverPort = window.location.port || '8080';
+        const webSockURL = `wss://${serverAddress}:${serverPort}/ws?username=${encodeURIComponent(username)}`;
+
+        let socket;
+        let reconnectAttempts = 0;
+        const maxReconnectAttempts = 5;
+        const baseReconnectDelay = 1000;
+        
+        //socket = new WebSocket(`wss://${serverAddress}:${serverPort}/ws?username=${encodeURIComponent(username)}`);
+
+        //socket.onopen = function(event) {
+        //    console.log(`Connection established to WebSocket server as ${username}`)
+        //    document.getElementById('status').textContent = "Connected";
+        //    document.getElementById('status').style.color = "green";
+        //    reconnectAttempts = 0;
+        //};
+
+        function connectWebSocket(){
+            socket = new WebSocket(webSockURL);
+
+            socket.onopen = function(event) {
+                console.log(`Connection established to WebSocket server as ${username}`);
+                reconnectAttempts = 0;
+            };
+
+
+         //Create a new message element and append it to the chat box
+         socket.onmessage = function(event) {
+             const data = JSON.parse(event.data);
+             if(data.type == "heartbeat"){
+                 console.log("Received heartbeat")
+                 socket.send("pong"); // respond to heartbeat
+                 return;
+            }
+
+            if(data.type == "chat"){
+                const chat_box = document.getElementById('chat-box');
+                const new_message = document.createElement('div');
+                new_message.textContent = data.message;
+                chat_box.appendChild(new_message);
+            }
+
+            if(data.type == "error"){
+                const chat_box = document.getElementById('chat-box');
+                const error_message = document.createElement('div');
+                error_message.textContent = `Error: ${data.message}`;
+                error_message.style.color = "red";
+                chat_box.appendChild(error_message);
+            }
+
+         };
+
+
+         //Handles errors in the WebSocket connection
+         socket.onerror = function(error) {
+             console.error("Websocket error:", error);
+         };
+
+         //Handles the closing of the WebSocket connection
+         socket.onclose = function(event) {
+             console.log("Connection to WebSocket server closed", event.code, event.reason);
+             if(reconnectAttempts < maxReconnectAttempts){
+             const delay = baseReconnectDelay * Math.pow(2, reconnectAttempts);
+             console.log(`Reconnecting in ${delay/1000}s (Attempting ${reconnectAttempts + 1}/${maxReconnectAttempts})`);
+             setTimeout(() => {
+                 reconnectAttempts++;
+                 connectWebSocket();
+             }, delay)
+             } else {
+                 console.log("Max reconnect attempts reached. Please refresh the page.");
+                 const chat_box = document.getElementById('chat-box');
+                 const disconnectMessage = document.createElement('div');
+                 disconnectMessage.textContent = `${username}: "Disconnected. Please refresh to reconnect."`;
+                 disconnectMessage.style.color = "red";
+                 chat_box.appendChild(disconnectMessage);
+             }
+         };
+     }
+
+        connectWebSocket();
+
+        function sendMessage(event) {
+            event.preventDefault();
+            const messageInput = document.getElementById('message');
+            const message_text = messageInput.value.trim();
+
+            if (message_text) {
+                if (socket.readyState === WebSocket.OPEN) {
+                    socket.send(message_text);
+                    messageInput.value = '';
+                } else if (socket.readyState === WebSocket.CLOSED || socket.readyState === WebSocket.CLOSING) {
+                    console.log("Connection closed, attempting to reconnect...");
+                    connectWebSocket();
+                    const checkConnection = setInterval(() => {
+                        if (socket.readyState === WebSocket.OPEN) {
+                            clearInterval(checkConnection);
+                            socket.send(message_text);
+                            messageInput.value = '';
+                            console.log("Message sent after reconnection");
+                        }
+                    }, 100);
+                }
+            }
+        }
+
+        document.getElementById('message-form').addEventListener('submit', sendMessage);
+
+        // Handle program closure
+        window.onbeforeunload = function(){
+            if(socket.readyState === WebSocket.OPEN) {
+                socket.close(1000, "Program closed"); // Normal closure
+            }
         };
 
         //Send message to the WebSocket server
-            const send_button = document.getElementById('send-btn');
-            send_button.addEventListener('click', (event) => {
-            event.preventDefault();
-            const messageInput = document.getElementById('message');  
-            const message_text = messageInput.value;
-            socket.send(message_text);
-            messageInput.value = ''; //Clears input after sending message
-        });
+        //    const send_button = document.getElementById('send-btn');
+        //    send_button.addEventListener('click', (event) => {
+        //    event.preventDefault();
+        //    const messageInput = document.getElementById('message');  
+        //    const message_text = messageInput.value;
+        //    socket.send(message_text);
+        //    messageInput.value = ''; //Clears input after sending message
+        //});
     </script>
 
 
