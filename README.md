@@ -22,7 +22,7 @@ NEW Version of SecureChat (Python Program)
 Old Version was FastAPI application (Got too complex)
 Instructions to run SecureChat
 
-# TESTED on 3 Different browsers
+TESTED on 3 Different browsers
 
 1. First clone the repo
 
@@ -40,13 +40,13 @@ CREATE TABLE users (
 3. Create a new file to generate the Encryption key
 (You could delete the file after)
 
-# Import at the top of a new file created "generate_key.py"
+- Import at the top of a new file created "generate_key.py"
 from cryptography.fernet import Fernet
 
-# Generate a Fernet key
+- Generate a Fernet key
 key = Fernet.generate_key()
 
-# Print the key
+- Print the key
 print("Your Fernet encryption key:")
 print(key.decode())
 
