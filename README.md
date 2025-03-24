@@ -7,7 +7,7 @@
 
 # System Requirements
 - Latest version of Python
-- PostgreSQL (pgAdmin is GUI version and what I used for db configuration)
+- PostgreSQL (pgAdmin is GUI version and what I used for db setup.)
 - 
 
 - Link to the Video:
