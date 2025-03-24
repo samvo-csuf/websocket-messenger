@@ -272,7 +272,6 @@ async def authenticate(websocket):
     try:
         # Receive authentication message
         auth_msg = await websocket.recv()
-        print(f"Received auth message: {auth_msg}")
         auth_data = json.loads(auth_msg)
 
         auth_type = auth_data.get("type")
