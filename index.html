@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="styles.css">
+    <title>SecureChat</title>
+</head>
+<body>
+    <h1>SecureChat</h1>
+
+
+    <!-- Added sidebar for user selection -->
+ <div class="container">
+        <div class="sidebar">
+            <h2>Users</h2>
+            <div id="user-list">
+                <!-- Users will be populated here -->
+                <div class="user active" data-chat="global">Global Chat</div>
+            </div>
+        </div>
+
+    <div class="chat-container">
+        <div id="chat-header">
+            <h3 id="current-chat">Global Chat</h3>
+        </div>
+    
+
+    <div id="chat"></div>
+    <div class="input-area">
+    <input type="text" id="message" placeholder="Type a message">
+    <label for="file-upload" class="file-button">📎</label>
+    <input type="file" id="file-upload" style="display: none">
+    <button id="emoji-button" class="emoji-button">😊</button>
+    <div id="emoji-picker" class="emoji-picker">
+      <!-- We'll populate this with emojis -->
+    </div>
+    <button id="format-help" class="format-help-button">?</button>
+    <div id="format-help-popup" class="format-help-popup">
+      <h4>Formatting Guide</h4>
+      <ul>
+        <li><strong>Bold:</strong> **text**</li>
+        <li><em>Italic:</em> *text*</li>
+        <li><u>Underline:</u> __text__</li>
+        <li><del>Strikethrough:</del> ~~text~~</li>
+        <li>Link: [text](url)</li>
+        <li><code>Code:</code> `text`</li>
+      </ul>
+</div>
+    <button onclick="sendMessage()">Send</button>
+    <p id="status"></p>
+    </div>
+
+    <!-- Add progress indicators for file transfers -->
+     <div id="file-transfer-status" class="file-transfer-container"></div>
+    </div>
+ </div>
+
+    <script>
+        let ws = null;
+        const SERVER_IP = "127.0.0.1"; //Replace with Laptop's IP
+        let reconnectAttempts = 0;
+        const MAX_RECONNECT_ATTEMPTS = 5;
+        const RECONNECT_DELAY = 2000; //2 seconds delay
+
+        // Private messaging variables
+        let currentUser = null; // The logged-in user
+        let targetUser = "global"; // Who we're chatting with (default: global)
+        let conversations = {
+            "global": [] // Initialize global chat history
+        }
+        let onlineUsers = []; // List of online users
+
+
+        // File sharing variables
+        let pendingFileTransfers = {};
+        let fileChunkSize = 64 * 1024; // 64KB chunks
+
+        // File upload setup
+        function setupFileUpload() {
+            const fileInput = document.getElementById('file-upload');
+            fileInput.addEventListener('change', (event) => {
+                const file = event.target.files[0];
+                if (!file) return;
+
+                // Prepare file info
+                const fileId = Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+                const recipient = targetUser;
+
+                // Initiate file transfer
+                initiateFileTransfer(file, fileId, recipient);
+
+                // Reset file input
+                fileInput.value = '';
+            });
+        }
+
+        // Client-side file type validation
+        function validateFileType(file) {
+             //List of allowed file types
+            const allowedTypes = [
+                'image/jpeg', 'image/png', 'image/gif',
+                'application/pdf', 'text/plain',
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            ];
+
+            if (!allowedTypes.includes(file.type)) {
+                alert('This file type is not allowed for security reasons.');
+                return false;
+            }
+
+            // Size limit (e.g., 10MB)
+            if (file.size > 10 * 1024 * 1024) {
+                alert('File size exceeds the maximum allowed limit (10MB).');
+                return false;
+            }
+
+            return true;
+        }
+
+        // Function to initiate file transfer
+        function initiateFileTransfer(file, fileId, recipient) {
+            if (!validateFileType(file)){
+                return;
+            }
+
+            // Create file metadata
+            const metadata = {
+                type: 'file_init',
+                fileId: fileId,
+                fileName: file.name,
+                fileSize: file.size,
+                fileType: file.type,
+                recipient: recipient
+            };
+
+            // Send metadata to recipient
+            ws.send(JSON.stringify(metadata));
+
+            // Create progress UI
+            showFileTransferProgress(fileId, file.name, 'Preparing', 0);
+
+            // Store file for sending
+            pendingFileTransfers[fileId] = {
+                file: file,
+                sentBytes: 0,
+                status: 'pending'
+            };
+        }
+
+
+        // Show file transfer progress in UI
+        function showFileTransferProgress(fileId, fileName, action, progress) {
+            const container = document.getElementById('file-transfer-status');
+
+            // Check if progress element exists
+            let progressElement = document.getElementById(`file-progress-${fileId}`);
+
+            if (!progressElement) {
+                // Create new progress element
+                progressElement = document.createElement('div');
+                progressElement.id = `file-progress-${fileId}`;
+                progressElement.className = 'file-progress';
+                progressElement.innerHTML = `
+                    <div>${action} ${fileName}</div>
+                    <div class="progress-bar" id="progress-bar-${fileId}"></div>
+                    <div id="progress-text-${fileId}">0%</div>
+                `;
+                container.appendChild(progressElement);
+            }
+
+                // Update progress
+                const progressBar = document.getElementById(`progress-bar-${fileId}`);
+                const progressText = document.getElementById(`progress-text-${fileId}`);
+
+                progressBar.style.width = `${progress}%`;
+                progressText.textContent = `${Math.round(progress)}%`;
+
+                // Remove when complete
+                if (progress >= 100) {
+                    setTimeout(() => {
+                        progressElement.remove();
+                    }, 5000);
+                }
+            }
+
+        
+        
+        // Function to handle incoming file transfers
+        function handleIncomingFile(data) {
+            if (data.type === 'file_init') {
+                // Show file incoming notification
+                appendMessage(`[SYSTEM] ${data.sender} is sending file: ${data.fileName}`, targetUser);
+                showFileTransferProgress(data.fileId, data.fileName, 'Receiving', 0);
+
+                // Initialize file transfer data
+                pendingFileTransfers[data.fileId] = {
+                    fileName: data.fileName,
+                    fileType: data.fileType,
+                    fileSize: data.fileSize,
+                    chunks: [], // initialize chunks array
+                    receivedBytes: 0,
+                    totalBytes: data.fileSize,
+                    key: data.key ? base64ToArrayBuffer(data.key) : null,
+                    iv: data.iv ? base64ToArrayBuffer(data.iv) : null,
+                    status: 'receiving'
+                };
+
+                // Accept file transfer
+                ws.send(JSON.stringify({
+                    type: 'file_accept',
+                    fileId: data.fileId,
+                    recipient: data.sender
+                }));
+            }
+            else if (data.type === 'file_chunk') {
+                // Process file chunk
+                handleFileChunk(data);
+            }
+            else if (data.type === 'file_complete') {
+                // File transfer complete, process with decryption
+                processCompletedFile(data);
+            }
+        }
+
+
+        function sendFileChunks(fileId) {
+            const transfer = pendingFileTransfers[fileId];
+            if (!transfer || transfer.status !== 'pending') return;
+
+            // Mark as sending
+            transfer.status = 'sending';
+
+            // Prepare for chunking
+            const file = transfer.file;
+            const totalChunks = Math.ceil(file.size / fileChunkSize);
+            let currentChunk = 0;
+
+            // Function to send a single chunk
+            function sendNextChunk() {
+                if (currentChunk >= totalChunks) {
+                    // Complete
+                    ws.send(JSON.stringify({
+                        type: 'file_complete',
+                        fileId: fileId,
+                        recipient: targetUser
+                    }));
+
+                    showFileTransferProgress(fileId, file.name, 'Sent', 100);
+                    transfer.status = 'complete';
+                    return;
+                }
+
+                // Calculate chunk boundaries
+                const start = currentChunk * fileChunkSize;
+                const end = Math.min(file.size, start + fileChunkSize);
+
+                // Read chunk
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    if(!e.target || !e.target.result) {
+                        console.error('Error reading file chunk');
+                        return;
+                    }
+
+                    // Get raw data
+                    const arrayBuffer = e.target.result;
+                    // Convert to base64
+                    const base64data = arrayBufferToBase64(arrayBuffer);
+                    console.log(`Sending chunk ${currentChunk}/${totalChunks} for ${fileId}, size: ${arrayBuffer.byteLength}`);
+                    // Send chunk
+                    ws.send(JSON.stringify({
+                        type: 'file_chunk',
+                        fileId: fileId,
+                        data: base64data,
+                        chunkIndex: currentChunk,
+                        totalChunks: totalChunks,
+                        recipient: targetUser
+                    }));
+
+                    // Update progress
+                    transfer.sentBytes = end;
+                    const progress = (end / file.size) * 100;
+                    showFileTransferProgress(fileId, file.name, 'Sending', progress);
+
+                    // Next chunk
+                    currentChunk++;
+                    setTimeout(sendNextChunk, 10); // Small delay to avoid flooding
+                };
+
+                // Read as data URL
+                const chunk = file.slice(start, end);
+                reader.readAsArrayBuffer(chunk);
+            }
+
+            // Start sending chunks
+            sendNextChunk();
+        }
+
+
+        // Utility function to convert base64 to ArrayBuffer
+        function base64ToArrayBuffer(base64) {
+            const binaryString = atob(base64);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        // Utility function to convert ArrayBuffer to base64
+        function arrayBufferToBase64(buffer) {
+            let binary = '';
+            const bytes = new Uint8Array(buffer);
+            for (let i = 0; i < bytes.byteLength; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return btoa(binary);
+        }
+
+        // Decrypt file chunk using Web Crypto API
+        async function decryptFileChunk(encryptedData, key, iv) {
+            // Import the AES-CBC key
+            const cryptoKey = await window.crypto.subtle.importKey(
+                "raw", 
+                key, 
+                { name: "AES-CBC" }, 
+                false, 
+                ["decrypt"]
+            );
+
+            console.log(`Decrypting chunk, encrypted size: ${encryptedData.byteLength}`);
+
+
+            // Decrypt the data
+            const decrypted = await window.crypto.subtle.decrypt(
+                {
+                    name: "AES-CBC",
+                    iv: iv
+                },
+                cryptoKey,
+                encryptedData
+            );
+            console.log(`Decrypted size before unpadding: ${decrypted.byteLength}`);
+            //const paddedData = new Uint8Array(decrypted);
+            const decryptedData = new Uint8Array(decrypted);
+            console.log(`Padded data (hex): ${Array.from(decryptedData).map(b => b.toString(16).padStart(2, '0')).join('')}`);
+    
+            return decryptedData;
+        }
+
+        // Remove PKCS#7 padding
+        function removePadding(paddedData) {
+            const padding = paddedData[paddedData.length - 1];
+
+            // Check if padding is valid
+            if (padding > paddedData.length) {
+                throw new Error("Invalid padding");
+            }
+
+            // Verify padding
+            for (let i = paddedData.length - padding; i < paddedData.length; i++) {
+                if (paddedData[i] !== padding) {
+                    throw new Error("Invalid padding");
+                }
+            }
+
+            // Return unpadded data
+            return paddedData.slice(0, paddedData.length - padding);
+        }
+
+
+        // Function to receive file chunks
+       async function handleFileChunk(data) {
+            const fileId = data.fileId;
+            const transfer = pendingFileTransfers[fileId];
+
+            // Check if we have this transfer
+            if (!transfer) {
+                console.error('Received chunk for unknown file transfer:', fileId);
+                return;
+            }
+
+        try {
+            // Convert base64-encoded encrypted data to ArrayBuffer
+            const encryptedBytes = base64ToArrayBuffer(data.data);
+            console.log(`Received chunk ${data.chunkIndex}/${data.totalChunks} for ${fileId}, encrypted size: ${encryptedBytes.byteLength}`);
+            console.log(`Key length: ${transfer.key.byteLength}, IV length: ${transfer.iv.byteLength}`);
+            // Decrypt the chunk using the provided key and IV
+            const decryptedChunk = await decryptFileChunk(encryptedBytes, transfer.key, transfer.iv);
+            console.log(`Decrypted chunk ${data.chunkIndex}, size: ${decryptedChunk.length}`);
+            // Store the decrypted chunk at the correct index
+            transfer.chunks[data.chunkIndex] = decryptedChunk;
+
+            // Update received bytes with decrypted chunk size
+            transfer.receivedBytes += decryptedChunk.length;
+
+            // Update progress in the UI
+            const progress = (transfer.receivedBytes / transfer.totalBytes) * 100;
+            showFileTransferProgress(fileId, transfer.fileName, 'Receiving', progress);
+
+        } catch (err) {
+            console.error(`Error handling chunk ${data.chunkIndex} for file ${fileId}:`, err);
+            appendMessage(`[ERROR] Failed to process chunk for ${transfer.fileName}: ${err.message}`, targetUser);
+        }
+    }
+
+    async function processCompletedFile(data) {
+        const fileId = data.fileId;
+        const transfer = pendingFileTransfers[fileId];
+        
+        if (!transfer) {
+            console.error('File transfer not found:', fileId);
+            appendMessage(`[ERROR] File transfer not found: ${fileId}`, targetUser);
+            return;
+        }
+
+        console.log(`Processing ${fileId}: ${transfer.chunks.length} chunks received, expected ${data.totalChunks}`);
+        if(transfer.chunks.length !== data.totalChunks || transfer.chunks.some(chunk => chunk === undefined)) {
+            console.log(`Chunk status: ${transfer.chunks.map((c, i) => c ? i : 'missing').join(', ')}`)
+            appendMessage(`[ERROR] File transfer incomplete: ${transfer.fileName}`, targetUser);
+            return;
+        }
+
+        try {
+            showFileTransferProgress(fileId, transfer.fileName, 'Finalizing', 100);
+            // Create final blob from decrypted chunks
+            const fileBlob = new Blob(transfer.chunks, { type: transfer.fileType });
+            completeFileTransfer(fileId, transfer, fileBlob, data.sender);
+
+        } catch (err) {
+            console.error('Error finalizing file:', err);
+            appendMessage(`[ERROR] Failed to process file ${transfer.fileName}: ${err.message}`, targetUser);
+        }
+
+    } 
+
+    // Complete file transfer and add download link
+    function completeFileTransfer(fileId, transfer, fileBlob, sender) {
+        showFileTransferProgress(fileId, transfer.fileName, 'Received', 100);
+
+        // Create download link
+        const url = URL.createObjectURL(fileBlob);
+        const downloadLink = document.createElement('a');
+        downloadLink.href = url;
+        downloadLink.download = transfer.fileName;
+        downloadLink.textContent = `Download ${transfer.fileName}`;
+        downloadLink.className = 'download-link';
+
+        // Add to chat
+        appendMessage(`[FILE] ${sender} sent: `, targetUser);
+        document.getElementById('chat').appendChild(downloadLink);
+        document.getElementById('chat').appendChild(document.createElement('br'));
+
+        // Clean up
+        delete pendingFileTransfers[fileId];
+    }
+
+        // This function is to parse formatting
+        function formatMessage(message) {
+          // Convert markdown-like syntax to HTML
+          return message
+            // Bold: **text** -> <strong>text</strong>
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            // Italic: *text* -> <em>text</em>
+            .replace(/\*(.*?)\*/g, '<em>$1</em>')
+            // Underline: __text__ -> <u>text</u>
+            .replace(/__(.*?)__/g, '<u>$1</u>')
+            // Strikethrough: ~~text~~ -> <del>text</del>
+            .replace(/~~(.*?)~~/g, '<del>$1</del>')
+            // Links: [text](url) -> <a href="url" target="_blank">text</a>
+            .replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank">$1</a>')
+            // Code: `text` -> <code>text</code>
+            .replace(/`(.*?)`/g, '<code>$1</code>');
+        }
+
+
+        function appendMessage(msg, chatTarget = targetUser){
+            // Add message to the appropriate conversation history
+            if (!conversations[chatTarget]){
+                conversations[chatTarget] = [];
+            }
+            conversations[chatTarget].push(msg);
+
+            //Only update display if this is the current conversation
+            if (chatTarget === targetUser){
+                const chat = document.getElementById('chat');
+                // Format the message before adding it to the chat
+                chat.innerHTML += msg.replace(/(.*?):(.*)/g, function(match, username, content) {
+                    // Only format the content part, not the username/timestamp
+                    return username + ':' + formatMessage(content);
+                }) + '<br>';
+                chat.scrollTop = chat.scrollHeight;
+            }
+        }
+
+        function setStatus(msg)
+        {
+            document.getElementById('status').innerHTML = msg;
+        }
+
+        function switchConversation(username){
+            targetUser = username;
+            document.getElementById('current-chat').innerHTML = username === "global" ? "Global Chat" : `Chat with ${username}`;
+
+            // Update active status in user list
+            const userElements = document.querySelectorAll('.user');
+            userElements.forEach(el => {
+                if(el.dataset.chat === username) {
+                    el.classList.add('active');
+                } else {
+                    el.classList.remove('active');
+                }
+            });
+
+            // Display the selected conversation
+            const chat = document.getElementById('chat');
+            chat.innerHTML = '';
+            if (conversations[username]){
+                conversations[username].forEach(msg => {
+                    chat.innerHTML += msg + '<br>';
+                });
+            }
+            chat.scrollTop = chat.scrollHeight;
+        }
+
+        function updateUserList(users) {
+            const userListDiv = document.getElementById('user-list');
+            
+            // Save current users before updating
+            const currentUsers = new Set();
+            userListDiv.querySelectorAll('.user:not([data-chat="global"])').forEach(el => {
+                currentUsers.add(el.dataset.chat);
+            });
+            
+            // Add new users
+            users.forEach(user => {
+                if (user !== currentUser && !currentUsers.has(user)) {
+                    const userElement = document.createElement('div');
+                    userElement.className = 'user';
+                    userElement.dataset.chat = user;
+                    userElement.innerText = user;
+                    userElement.addEventListener('click', () => switchConversation(user));
+                    userListDiv.appendChild(userElement);
+                    
+                    // Initialize conversation history if needed
+                    if (!conversations[user]) {
+                        conversations[user] = [];
+                    }
+                }
+                currentUsers.delete(user); // Remove from tracking set
+            });
+            
+            // Handle users who are no longer online
+            currentUsers.forEach(user => {
+                const userEl = userListDiv.querySelector(`.user[data-chat="${user}"]`);
+                if (userEl) {
+                    userEl.classList.add('offline');
+                }
+            });
+        }
+
+
+
+        function connect(){
+            const username = sessionStorage.getItem('username');
+            const password = sessionStorage.getItem('password');
+            if(!username || !password){
+                window.location.href = 'signin.html';
+                return;
+        }
+
+        currentUser = username; // Store the current user
+
+        ws = new WebSocket(`ws://${SERVER_IP}:8765`);
+
+        ws.onopen = () => {
+            const authMessage = JSON.stringify({
+                type: 'auth',
+                username: username,
+                password: password
+            });
+            ws.send(authMessage);
+            setStatus('Connected!');
+            reconnectAttempts = 0;
+
+        };
+
+        // Handling file accept messages
+        function handleFileAccept(data) {
+            if (data.type === 'file_accept') {
+                const fileId = data.fileId;
+                if (pendingFileTransfers[fileId] && pendingFileTransfers[fileId].status === 'pending') {
+                    // Start sending file chunks
+                    sendFileChunks(fileId);
+                }
+            }
+        }
+
+        ws.onmessage = (event) => {
+            console.log('Received:', event.data);
+            const data = JSON.parse(event.data);
+
+            if(data.type === 'auth_success'){
+                appendMessage(`[SYSTEM] ${data.message}`, "global");
+
+                if(data.message === 'Authentication successful'){
+                    setStatus('Authenticated as ' + username);
+                    // Request user list after authentication
+                    ws.send(JSON.stringify({type: "get_users"}));
+                }
+
+                // Handle user joined/left notifications
+                if (data.message.includes('joined') || data.message.includes('left')) {
+                        // Request updated user list
+                        ws.send(JSON.stringify({type: "get_users"}));
+                    } 
+            } else if (data.type === 'message'){
+
+                    // Determine which conversation this belongs to
+                    const chatTarget = data.private ? (data.username === currentUser ? data.recipient : data.username) : "global";
+                    appendMessage(`[${data.timestamp}] ${data.username}: ${data.message}`, chatTarget);
+                    
+                    // If in a different conversation when private message arrives, indicate new message
+                    if (data.private && chatTarget !== targetUser && data.username !== currentUser) {
+                        const userEl = document.querySelector(`.user[data-chat="${data.username}"]`);
+                        if (userEl) userEl.classList.add('new-message');
+                    }
+            } else if (data.type === 'error'){
+                appendMessage(`[ERROR] ${data.message}`, "global");
+                setStatus(`Error: ` + data.message);
+            } else if(data.type === 'user_list'){
+                updateUserList(data.users);
+                onlineUsers = data.users;
+            } else if (data.type === 'file_init' || data.type === 'file_chunk' || data.type === 'file_complete') {
+                handleIncomingFile(data);
+            }
+            else if (data.type === 'file_accept') {
+                //handleFileAccept(data);
+                        // Handle file accept message
+                const fileId = data.fileId;
+                if (pendingFileTransfers[fileId] && pendingFileTransfers[fileId].status === 'pending') {
+                    console.log(`File transfer accepted for ${fileId}, starting to send chunks`);
+                    // Start sending file chunks
+                    sendFileChunks(fileId);
+                }
+
+            }
+        };
+
+        ws.onclose = () => {
+            appendMessage(`[SYSTEM] Connection closed`, "global");
+            setStatus('Disconnected');
+            attemptReconnect(username, password); // Start reconnection
+        };
+
+        ws.onerror = (error) => {
+            console.error('Websocket error:', error);
+            setStatus('WebSocket error');
+        };
+
+    }
+
+    function attemptReconnect(username, password) {
+        if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+            appendMessage('[SYSTEM] Max reconnection attempts reached. Please sign in again.', "global");
+            setStatus('Disconnected - Max attempts reached');
+            sessionStorage.clear();
+            setTimeout(() => window.location.href = 'signin.html', 1000);
+            return;
+        }
+
+        reconnectAttempts++;
+        appendMessage(`[SYSTEM] Attempting to reconnect (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`, "global");
+        setTimeout(() => {
+            ws = new WebSocket(`ws://${SERVER_IP}:8765`);
+            ws.onopen = () => {
+                const authMessage = JSON.stringify({
+                    type: 'auth',
+                    username: username,
+                    password: password
+                });
+                ws.send(authMessage);
+                setStatus('Connected!');
+                reconnectAttempts = 0; // Reset on success
+            };
+            ws.onmessage = ws.onmessage; // Reuse existing handler
+            ws.onclose = () => attemptReconnect(username, password); // Recursive reconnection
+            ws.onerror = ws.onerror;
+        }, RECONNECT_DELAY);
+
+    }
+
+    function sendMessage() {
+        const message = document.getElementById('message').value;
+        if (!ws || ws.readyState != WebSocket.OPEN){
+            alert('Not connected to the server');
+            return;
+        }
+        if (message){
+            // Construct message based on target
+            let msgData = {message: message};
+
+            // If not global chat, send as private message
+            if(targetUser !== "global"){
+            msgData.type = "private";
+            msgData.recipient = targetUser;
+            }
+
+            ws.send(JSON.stringify(msgData));
+            document.getElementById('message').value = '';
+            console.log('Sent:', message);
+        }
+    }
+
+    // Add this to your script section
+    function setupEmojiPicker() {
+      const button = document.getElementById('emoji-button');
+      const picker = document.getElementById('emoji-picker');
+      const messageInput = document.getElementById('message');
+    
+      // Common emoji categories
+      const emojis = {
+        "Smileys": ["😀", "😁", "😂", "🤣", "😃", "😄", "😅", "😆", "😉", "😊", "😋", "😎"],
+        "Gestures": ["👍", "👎", "👌", "✌️", "🤞", "👏", "🙌", "🤝", "👊", "✊"],
+        "People": ["👶", "👦", "👧", "👨", "👩", "👴", "👵", "👨‍⚕️", "👩‍⚕️", "👨‍🎓"],
+        "Animals": ["🐶", "🐱", "🐭", "🐹", "🐰", "🦊", "🐻", "🐼", "🐨", "🐯"]
+      };
+      
+      // Create emoji picker content
+      let pickerContent = '';
+      for (const category in emojis) {
+        pickerContent += `<div class="emoji-category"><h4>${category}</h4>`;
+        emojis[category].forEach(emoji => {
+          pickerContent += `<span class="emoji-item">${emoji}</span>`;
+        });
+        pickerContent += '</div>';
+      }
+      
+      picker.innerHTML = pickerContent;
+      
+      // Toggle picker visibility
+      button.addEventListener('click', () => {
+        picker.style.display = picker.style.display === 'block' ? 'none' : 'block';
+      });
+      
+      // Handle emoji selection
+      picker.addEventListener('click', (e) => {
+        if (e.target.classList.contains('emoji-item')) {
+          messageInput.value += e.target.textContent;
+          picker.style.display = 'none';
+          messageInput.focus();
+        }
+      });
+      
+      // Hide picker when clicking elsewhere
+      document.addEventListener('click', (e) => {
+        if (!picker.contains(e.target) && e.target !== button) {
+          picker.style.display = 'none';
+        }
+      });
+    }
+
+    function setupFormatHelp() {
+      const helpButton = document.getElementById('format-help');
+      const helpPopup = document.getElementById('format-help-popup');
+        
+      helpButton.addEventListener('click', () => {
+        helpPopup.style.display = helpPopup.style.display === 'block' ? 'none' : 'block';
+      });
+
+      document.addEventListener('click', (e) => {
+        if (!helpPopup.contains(e.target) && e.target !== helpButton) {
+          helpPopup.style.display = 'none';
+        }
+      });
+    }
+
+    document.getElementById('message').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter'){
+            sendMessage();
+        }
+    });
+
+    // Add click handler for Global Chat
+    document.querySelector('.user[data-chat="global"]').addEventListener('click', () => {
+        switchConversation("global");
+    })
+
+    // Auto-connect on page load
+    window.onload = function(){
+        connect();
+        setupFileUpload();
+        setupEmojiPicker();
+        setupFormatHelp();
+    };
+
+    </script>
+    
+</body>
+</html>
