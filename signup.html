@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="styles.css">
+    <title>Signup Page - SecureChat</title>
+</head>
+<body>
+    <h1>Signup for SecureChat</h1>
+    <label for="username">Username:</label>
+    <input type="text" id="username" placeholder="Create a username"><br><br>
+    <label for="password">Password:</label>
+    <input type="password" id="password" placeholder="Create a password"><br><br>
+    <button onclick="signup()">Signup</button>
+    <p id="status"></p>
+    <p>Already have an account? <a href="signin.html">Sign in</a></p>
+    
+    <script>
+        let ws = null;
+        const SERVER_IP = "127.0.0.1"; // Replace with Laptop's IP
+
+        function setStatus(msg){
+            document.getElementById('status').innerHTML = msg;
+        }
+
+        function signup() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            if (!username || !password) {
+                alert('Please enter the username and password');
+                return;
+            }
+
+            ws = new WebSocket(`ws://${SERVER_IP}:8765`);
+
+            ws.onopen = () => {
+                const signupMessage = JSON.stringify({
+                    type: 'signup',
+                    username: username,
+                    password: password
+                });
+                ws.send(signupMessage);
+                setStatus('Signing up...');
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                setStatus(data.message);
+                if (data.type === 'signup_success') {
+                    setTimeout(() => window.location.href = 'signin.html', 1000);
+            }
+        };
+
+        ws.onclose = () => setStatus('Disconnected');
+        ws.onerror = (error) => {
+            console.error('WebSocket error:', error);
+            setStatus('WebSocket error');
+        };
+    }
+
+    </script>
+</body>
+</html>
