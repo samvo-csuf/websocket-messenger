@@ -8,14 +8,19 @@
 # System Requirements
 - Latest version of Python
 - PostgreSQL (pgAdmin is GUI version and what I used for db setup.)
-- 
 
 - Link to the Video:
+https://drive.google.com/file/d/1W8sSSBKjMjgpJ8n1MoUgM9iWIXuei3ct/view?usp=sharing
+
+Github link:
+https://github.com/samvo-csuf/websocket-messenger
+
+(If zip folder doesn't work on Canvas, the github is available)
  
 
-# NEW Version of SecureChat (Python Program)
-# Old Version was FastAPI application (Got too complex)
-# Instructions to run SecureChat
+NEW Version of SecureChat (Python Program)
+Old Version was FastAPI application (Got too complex)
+Instructions to run SecureChat
 
 # TESTED on 3 Different browsers
 
@@ -65,6 +70,7 @@ Save the key in the environment variables file.
 
 7. The server.py should be able to start the server and the python -m http.server 8000 command should serve the client on a browser. 
 
+- Any issues with port, try changing it to another port. 
 - CHANGELOG is located in github link with /commits. 
 
 # IMPORTANT ISSUES UNRESOLVED
