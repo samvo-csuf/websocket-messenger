@@ -58,7 +58,7 @@
 
     <script>
         let ws = null;
-        const SERVER_IP = "127.0.0.1"; 
+        const SERVER_IP = "localhost"; 
         let reconnectAttempts = 0;
         const MAX_RECONNECT_ATTEMPTS = 5;
         const RECONNECT_DELAY = 2000; //2 seconds delay
@@ -68,13 +68,95 @@
         let targetUser = "global"; // Who we're chatting with (default: global)
         let conversations = {
             "global": [] // Initialize global chat history
-        }
+        };
         let onlineUsers = []; // List of online users
 
+        // Encryption variables
+        let clientPrivateKey = null; // Client's private key for decryption
+        let clientPublicKey = null; // Client's public key for encryption
+        let serverPublicKey = null; // Server's public key for encryption
 
         // File sharing variables
         let pendingFileTransfers = {};
         let fileChunkSize = 64 * 1024; // 64KB chunks
+
+        // Generate RSA-4096 key pair
+        async function generateKeyPair(){
+            const keyPair = await window.crypto.subtle.generateKey(
+                {
+                    name: "RSA-OAEP",
+                    modulusLength: 4096,
+                    publicExponent: new Uint8Array([0x01, 0x00, 0x01]),
+                    hash: "SHA-256"
+                },
+                true,
+                ["encrypt", "decrypt"]
+            );
+            clientPrivateKey = keyPair.privateKey;
+            clientPublicKey = keyPair.publicKey;
+            return keyPair;
+        }
+
+        // Export public key to PEM format
+        async function exportPublicKey(key) {
+            const exported = await window.crypto.subtle.exportKey("spki", key);
+            const pem = `-----BEGIN PUBLIC KEY-----\n${btoa(String.fromCharCode.apply(null, new Uint8Array(exported))
+             ).match(/.{1,64}/g).join('\n')}\n-----END PUBLIC KEY-----`;
+            return pem;
+        }
+
+        // Import server's public key from PEM format
+        async function importPublicKey(pem) {
+            const binaryDerString = atob(pem.replace(/-----(BEGIN|END) PUBLIC KEY-----/g, '').replace(/\n/g, ''));
+            const binaryDer = new Uint8Array(binaryDerString.length);
+            for (let i = 0; i < binaryDerString.length; i++) {
+                binaryDer[i] = binaryDerString.charCodeAt(i);
+            }
+            return await window.crypto.subtle.importKey(
+                "spki",
+                binaryDer.buffer,
+                {
+                    name: "RSA-OAEP",
+                    hash: "SHA-256"
+                },
+                true,
+                ["encrypt"]
+            );
+        }
+
+        // Decrypt message using AES-256-CBC
+        async function decryptMessage(encryptedData, key, iv) {
+            // Import the AES-CBC key
+            const cryptoKey = await window.crypto.subtle.importKey(
+                "raw",
+                key,
+                { name: "AES-CBC" },
+                false,
+                ["decrypt"]
+            );
+
+            // Decrypt the data
+            const decrypted = await window.crypto.subtle.decrypt(
+                {
+                    name: "AES-CBC",
+                    iv: iv
+                },
+                cryptoKey,
+                encryptedData
+            );
+            return new TextDecoder().decode(decrypted);
+        }
+
+        // Decrypt AES key using RSA-OAEP
+        async function decryptKey(encryptedKey){
+            return await window.crypto.subtle.decrypt(
+                { name: "RSA-OAEP" },
+                clientPrivateKey,
+                encryptedKey
+            );
+        }
+
+
 
         // File upload setup
         function setupFileUpload() {
@@ -93,6 +175,17 @@
                 // Reset file input
                 fileInput.value = '';
             });
+        }
+
+        // function to escape HTML inputs to prevent XSS attacks
+        function escapeHTML(str){
+            return str
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+
         }
 
         // Client-side file type validation
@@ -319,7 +412,7 @@
             return btoa(binary);
         }
 
-        // Decrypt file chunk using Web Crypto API
+        // Decrypt file chunk
         async function decryptFileChunk(encryptedData, key, iv) {
             // Import the AES-CBC key
             const cryptoKey = await window.crypto.subtle.importKey(
@@ -350,25 +443,25 @@
             return decryptedData;
         }
 
-        // Remove PKCS#7 padding
-        function removePadding(paddedData) {
-            const padding = paddedData[paddedData.length - 1];
-
-            // Check if padding is valid
-            if (padding > paddedData.length) {
-                throw new Error("Invalid padding");
-            }
-
-            // Verify padding
-            for (let i = paddedData.length - padding; i < paddedData.length; i++) {
-                if (paddedData[i] !== padding) {
-                    throw new Error("Invalid padding");
-                }
-            }
-
-            // Return unpadded data
-            return paddedData.slice(0, paddedData.length - padding);
-        }
+        //// Remove PKCS#7 padding
+        //function removePadding(paddedData) {
+        //    const padding = paddedData[paddedData.length - 1];
+//
+        //    // Check if padding is valid
+        //    if (padding > paddedData.length) {
+        //        throw new Error("Invalid padding");
+        //    }
+//
+        //    // Verify padding
+        //    for (let i = paddedData.length - padding; i < paddedData.length; i++) {
+        //        if (paddedData[i] !== padding) {
+        //            throw new Error("Invalid padding");
+        //        }
+        //    }
+//
+        //    // Return unpadded data
+        //    return paddedData.slice(0, paddedData.length - padding);
+        //}
 
 
         // Function to receive file chunks
@@ -387,9 +480,16 @@
             const encryptedBytes = base64ToArrayBuffer(data.data);
             console.log(`Received chunk ${data.chunkIndex}/${data.totalChunks} for ${fileId}, encrypted size: ${encryptedBytes.byteLength}`);
             console.log(`Key length: ${transfer.key.byteLength}, IV length: ${transfer.iv.byteLength}`);
+
             // Decrypt the chunk using the provided key and IV
             const decryptedChunk = await decryptFileChunk(encryptedBytes, transfer.key, transfer.iv);
             console.log(`Decrypted chunk ${data.chunkIndex}, size: ${decryptedChunk.length}`);
+
+            // Initiate chunks array if it doesn't exist
+            if (!transfer.chunks) {
+                transfer.chunks = [];
+            }
+
             // Store the decrypted chunk at the correct index
             transfer.chunks[data.chunkIndex] = decryptedChunk;
 
@@ -400,12 +500,24 @@
             const progress = (transfer.receivedBytes / transfer.totalBytes) * 100;
             showFileTransferProgress(fileId, transfer.fileName, 'Receiving', progress);
 
+            //Check if this was the last chunk and we have pending completion
+            console.log(`Checking for completion: pendingCompletion exists: ${!!transfer.pendingCompletion}, chunks: ${transfer.chunks.length}, totalChunks: ${data.totalChunks}`);
+
+            if(transfer.pendingCompletion && transfer.chunks.length === parseInt(data.totalChunks)) { 
+                console.log('All chunks received, processing completed file');
+
+                //Create final blob from decrypted chunks
+                const fileBlob = new Blob(transfer.chunks, { type: transfer.fileType });
+                completeFileTransfer(fileId, transfer, fileBlob, transfer.pendingCompletion.sender);
+            }
+
         } catch (err) {
             console.error(`Error handling chunk ${data.chunkIndex} for file ${fileId}:`, err);
             appendMessage(`[ERROR] Failed to process chunk for ${transfer.fileName}: ${err.message}`, targetUser);
         }
     }
 
+    // Update how you handle file completion
     async function processCompletedFile(data) {
         const fileId = data.fileId;
         const transfer = pendingFileTransfers[fileId];
@@ -416,10 +528,11 @@
             return;
         }
 
-        console.log(`Processing ${fileId}: ${transfer.chunks.length} chunks received, expected ${data.totalChunks}`);
-        if(transfer.chunks.length !== data.totalChunks || transfer.chunks.some(chunk => chunk === undefined)) {
-            console.log(`Chunk status: ${transfer.chunks.map((c, i) => c ? i : 'missing').join(', ')}`)
-            appendMessage(`[ERROR] File transfer incomplete: ${transfer.fileName}`, targetUser);
+        console.log(`Processing ${fileId}: ${ transfer.chunks ? transfer.chunks.length : 0} chunks received, expected ${data.totalChunks}`);
+        if(!transfer.chunks || transfer.chunks.length !== parseInt(data.totalChunks)) {
+            console.log(`Chunk status: ${transfer.chunks ? transfer.chunks.map((c, i) => c ? i : 'missing').join(', ' ) : 'No chunks'}`);
+            console.log('Storing completion data for when all chunks arrive');
+            transfer.pendingCompletion = data;
             return;
         }
 
@@ -436,26 +549,28 @@
 
     } 
 
-    // Complete file transfer and add download link
     function completeFileTransfer(fileId, transfer, fileBlob, sender) {
         showFileTransferProgress(fileId, transfer.fileName, 'Received', 100);
 
-        // Create download link
-        const url = URL.createObjectURL(fileBlob);
-        const downloadLink = document.createElement('a');
-        downloadLink.href = url;
-        downloadLink.download = transfer.fileName;
-        downloadLink.textContent = `Download ${transfer.fileName}`;
-        downloadLink.className = 'download-link';
+    // Create download link
+    const url = URL.createObjectURL(fileBlob);
+    const fileMessage = {
+        type: 'file', // Mark this as a file message
+        content: `[FILE] ${sender} sent: `,
+        link: {
+            href: url,
+            download: transfer.fileName,
+            text: `Download ${transfer.fileName}`
+        }
+    };
 
-        // Add to chat
-        appendMessage(`[FILE] ${sender} sent: `, targetUser);
-        document.getElementById('chat').appendChild(downloadLink);
-        document.getElementById('chat').appendChild(document.createElement('br'));
+    // Add to chat history
+    appendMessage(fileMessage, targetUser);
 
-        // Clean up
-        delete pendingFileTransfers[fileId];
+    // Clean up
+    delete pendingFileTransfers[fileId];
     }
+
 
         // This function is to parse formatting
         function formatMessage(message) {
@@ -481,16 +596,27 @@
             if (!conversations[chatTarget]){
                 conversations[chatTarget] = [];
             }
+
+            // Store the message (object or string) in conversations
             conversations[chatTarget].push(msg);
 
             //Only update display if this is the current conversation
             if (chatTarget === targetUser){
                 const chat = document.getElementById('chat');
-                // Format the message before adding it to the chat
-                chat.innerHTML += msg.replace(/(.*?):(.*)/g, function(match, username, content) {
-                    // Only format the content part, not the username/timestamp
-                    return username + ':' + formatMessage(content);
-                }) + '<br>';
+                if(typeof msg === 'object' && msg.type === 'file'){
+                    // Handle file message
+                    const link = document.createElement('a');
+                    link.href = msg.link.href;
+                    link.download = msg.link.download;
+                    link.textContent = msg.link.text;
+                    link.className = 'download-link';
+                    chat.innerHTML += msg.content + '<br>'; // Add the "[FILE] sender sent:" text
+                    chat.appendChild(link); // Append the <a> element
+                    chat.appendChild(document.createElement('br')); // Add a line break
+                } else {
+                // Regular message (already escaped and formatted)
+                chat.innerHTML += msg + '<br>';
+            }
                 chat.scrollTop = chat.scrollHeight;
             }
         }
@@ -501,17 +627,19 @@
         }
 
         function switchConversation(username){
+
             targetUser = username;
             document.getElementById('current-chat').innerHTML = username === "global" ? "Global Chat" : `Chat with ${username}`;
 
             // Update active status in user list
             const userElements = document.querySelectorAll('.user');
             userElements.forEach(el => {
-                if(el.dataset.chat === username) {
-                    el.classList.add('active');
-                } else {
-                    el.classList.remove('active');
-                }
+                el.classList.toggle('active', el.dataset.chat === username);
+               // if(el.dataset.chat === username) {
+               //     el.classList.add('active');
+               // } else {
+               //     el.classList.remove('active');
+               // }
             });
 
             // Display the selected conversation
@@ -519,7 +647,22 @@
             chat.innerHTML = '';
             if (conversations[username]){
                 conversations[username].forEach(msg => {
-                    chat.innerHTML += msg + '<br>';
+                if (typeof msg === 'object' && msg.type === 'file'){
+                    // Rebuild file message
+                    chat.innerHTML += msg.content;
+                    const link = document.createElement('a');
+                    link.href = msg.link.href;
+                    link.download = msg.link.download;
+                    link.textContent = msg.link.text;
+                    link.className = 'download-link';
+                    chat.appendChild(link); // Append the <a> element
+                    chat.appendChild(document.createElement('br')); // Add a line break
+                } else {
+
+                    // Regular message (already escaped and formatted)
+                     chat.innerHTML += msg + '<br>';
+                 }
+
                 });
             }
             chat.scrollTop = chat.scrollHeight;
@@ -562,8 +705,8 @@
         }
 
 
-
-        function connect(){
+        // Connect to WebSocket
+    async function connect(){
             const username = sessionStorage.getItem('username');
             const password = sessionStorage.getItem('password');
             if(!username || !password){
@@ -572,14 +715,17 @@
         }
 
         currentUser = username; // Store the current user
+        await generateKeyPair(); // Generate key pair on load
+        const publicKeyPem = await exportPublicKey(clientPublicKey);
 
-        ws = new WebSocket(`ws://${SERVER_IP}:8765`);
+        ws = new WebSocket(`wss://${SERVER_IP}:8765`);
 
         ws.onopen = () => {
             const authMessage = JSON.stringify({
                 type: 'auth',
                 username: username,
-                password: password
+                password: password,
+                public_key: publicKeyPem // Send public key for authentication
             });
             ws.send(authMessage);
             setStatus('Connected!');
@@ -587,22 +733,23 @@
 
         };
 
-        // Handling file accept messages
-        function handleFileAccept(data) {
-            if (data.type === 'file_accept') {
-                const fileId = data.fileId;
-                if (pendingFileTransfers[fileId] && pendingFileTransfers[fileId].status === 'pending') {
-                    // Start sending file chunks
-                    sendFileChunks(fileId);
-                }
-            }
-        }
+        //// Handling file accept messages
+        //function handleFileAccept(data) {
+        //    if (data.type === 'file_accept') {
+        //        const fileId = data.fileId;
+        //        if (pendingFileTransfers[fileId] && pendingFileTransfers[fileId].status === 'pending') {
+        //            // Start sending file chunks
+        //            sendFileChunks(fileId);
+        //        }
+        //    }
+        //}
 
-        ws.onmessage = (event) => {
+        ws.onmessage = async (event) => {
             console.log('Received:', event.data);
             const data = JSON.parse(event.data);
 
             if(data.type === 'auth_success'){
+                serverPublicKey = await importPublicKey(data.sever_public_key); // Import server's public key
                 appendMessage(`[SYSTEM] ${data.message}`, "global");
 
                 if(data.message === 'Authentication successful'){
@@ -611,17 +758,35 @@
                     ws.send(JSON.stringify({type: "get_users"}));
                 }
 
-                // Handle user joined/left notifications
-                if (data.message.includes('joined') || data.message.includes('left')) {
-                        // Request updated user list
-                        ws.send(JSON.stringify({type: "get_users"}));
-                    } 
+                //// Handle user joined/left notifications
+                //if (data.message.includes('joined') || data.message.includes('left')) {
+                //        // Request updated user list
+                //        ws.send(JSON.stringify({type: "get_users"}));
+                //    } 
             } else if (data.type === 'message'){
 
                     // Determine which conversation this belongs to
                     const chatTarget = data.private ? (data.username === currentUser ? data.recipient : data.username) : "global";
-                    appendMessage(`[${data.timestamp}] ${data.username}: ${data.message}`, chatTarget);
-                    
+                    let messageContent;
+                    try{
+                        const encryptedMessage = base64ToArrayBuffer(data.message);
+                        let aesKey;
+                        if (data.private){
+                            const encryptedKey = base64ToArrayBuffer(data.key);
+                            aesKey = await decryptKey(encryptedKey);
+                        } else {
+                            aesKey = base64ToArrayBuffer(data.key);
+                        }
+                        const iv = base64ToArrayBuffer(data.iv);
+                        messageContent = await decryptMessage(encryptedMessage, aesKey, iv);
+                    } catch (err) {
+                        console.error('Decryption error:', err);
+                        appendMessage(`[ERROR] Failed to decrypt message`, chatTarget);
+                        return;
+                    }
+                    // Format the message safely
+                    const formattedMessage = formatMessage(escapeHTML(data.message));
+                    appendMessage(`[${data.timestamp}] ${data.username}: ${formattedMessage}`, chatTarget); 
                     // If in a different conversation when private message arrives, indicate new message
                     if (data.private && chatTarget !== targetUser && data.username !== currentUser) {
                         const userEl = document.querySelector(`.user[data-chat="${data.username}"]`);
@@ -637,8 +802,7 @@
                 handleIncomingFile(data);
             }
             else if (data.type === 'file_accept') {
-                //handleFileAccept(data);
-                        // Handle file accept message
+                // Handle file accept message
                 const fileId = data.fileId;
                 if (pendingFileTransfers[fileId] && pendingFileTransfers[fileId].status === 'pending') {
                     console.log(`File transfer accepted for ${fileId}, starting to send chunks`);
@@ -646,6 +810,10 @@
                     sendFileChunks(fileId);
                 }
 
+            }
+            if (data.message && (data.message.includes('joined') || data.message.includes('left'))) {
+                // Request updated user list
+                ws.send(JSON.stringify({type: "get_users"}));
             }
         };
 
@@ -662,6 +830,7 @@
 
     }
 
+    // Attempt reconnection
     function attemptReconnect(username, password) {
         if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
             appendMessage('[SYSTEM] Max reconnection attempts reached. Please sign in again.', "global");
@@ -673,48 +842,37 @@
 
         reconnectAttempts++;
         appendMessage(`[SYSTEM] Attempting to reconnect (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})...`, "global");
-        setTimeout(() => {
-            ws = new WebSocket(`ws://${SERVER_IP}:8765`);
-            ws.onopen = () => {
-                const authMessage = JSON.stringify({
-                    type: 'auth',
-                    username: username,
-                    password: password
-                });
-                ws.send(authMessage);
-                setStatus('Connected!');
-                reconnectAttempts = 0; // Reset on success
-            };
-            ws.onmessage = ws.onmessage; // Reuse existing handler
-            ws.onclose = () => attemptReconnect(username, password); // Recursive reconnection
-            ws.onerror = ws.onerror;
-        }, RECONNECT_DELAY);
-
+        setTimeout(() => connect(), RECONNECT_DELAY);
     }
 
+    // Function to send a message
     function sendMessage() {
-        const message = document.getElementById('message').value;
-        if (!ws || ws.readyState != WebSocket.OPEN){
+        const messageInput = document.getElementById('message');
+        let message = messageInput.value.trim();
+
+        if (!ws || ws.readyState !== WebSocket.OPEN){
             alert('Not connected to the server');
             return;
         }
         if (message){
+            
+            message = escapeHTML(message); // Escape HTML to prevent XSS
+
             // Construct message based on target
-            let msgData = {message: message};
+            let msgData = { message: message };
 
             // If not global chat, send as private message
             if(targetUser !== "global"){
             msgData.type = "private";
             msgData.recipient = targetUser;
             }
-
             ws.send(JSON.stringify(msgData));
-            document.getElementById('message').value = '';
+            messageInput.value = '';
             console.log('Sent:', message);
         }
     }
 
-    // Add this to your script section
+    // Setup emoji picker
     function setupEmojiPicker() {
       const button = document.getElementById('emoji-button');
       const picker = document.getElementById('emoji-picker');
