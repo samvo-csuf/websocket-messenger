@@ -455,6 +455,15 @@ async def cleanup_login_attempts():
 async def signup(username, password):
     """Handle user signup data"""
     try:
+        # Basic valildation
+        if not username or not password:
+            logger.warning("Attempted signup with empty username or password")
+            return {"type": "error", "message": "Username and password are required"}
+        
+        if len(password) < 8:
+            logger.warning(f"Attempted signup with short password for username {username}")
+            return {"type": "error", "message": "Password must be at least 8 characters"}
+        
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 # Check if username exists using consistent hash
@@ -468,15 +477,27 @@ async def signup(username, password):
                 if cur.fetchone():
                     logger.warning(f"Username {username} already taken")
                     return {"type": "error", "message": "Username already taken"}
-                
-                # Hash password and store
-                password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+                try:
+
+                    # Hash password and store
+                    password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+                    if not password_hash:
+                        raise ValueError("Password hashing failed")
+                    
+                    # Verify we can check the password with this hash
+                    bcrypt.checkpw(password.encode(), password_hash.encode())
+
+                except Exception as e:
+                    logger.error(f"Password hashing error: {e}")
+                    return {"type": "error", "message": "Error processing password"}
 
                 cur.execute(
                     "INSERT INTO users (username_hash, password_hash) VALUES (%s, %s)",
                     (username_hash, password_hash)
                 )
                 conn.commit()
+                logger.info(f"New user created: {username}")
                 return {"type": "signup_success", "message": "Signup successful"}
     except Exception as e:
         print(f"Signup error: {e}")
@@ -499,7 +520,7 @@ async def authenticate(websocket):
         if auth_type == "signup":
             result = await signup(username, password)
             await websocket.send(json.dumps(result))
-            return None
+            return None, None
         
         elif auth_type == "auth":
             # Check for brute-force attempts
@@ -510,7 +531,7 @@ async def authenticate(websocket):
                     "type": "error",
                     "message": login_check["message"]
                 }))
-                return None
+                return None, None
 
             # Check database for user
             with get_db_connection() as conn:
@@ -523,7 +544,7 @@ async def authenticate(websocket):
                     )
                     user = cur.fetchone()
 
-                    if user:
+                    if user and user["password_hash"]: # Make sure user exists and has a password hash
 
                         # Check password
                         stored_hash = user["password_hash"]
@@ -559,16 +580,16 @@ async def authenticate(websocket):
                         error_message = f"Account locked due to too many failed attempts. Try again in {LOCKOUT_DURATION.total_seconds() / 60} minutes."
                     logger.warning(f"Authentication failed for {username} from {remote_address}. Locked: {is_locked}")
                     await websocket.send(json.dumps({"type": "error", "message": error_message}))
-                    return None
+                    return None, None
         else:
             logger.warning(f"Invalid auth type {auth_type} from {remote_address}")
             await websocket.send(json.dumps({"type": "error", "message": "Invalid authentication type"}))
-            return None
+            return None, None
         
     except Exception as e:
         logger.error(f"Authentication error from {remote_address}: {e}")
         await websocket.send(json.dumps({"type": "error", "message": f"Authentication error: {str(e)}"}))
-        return None
+        return None, None
     
 async def heartbeat(websocket):
     """Send periodic heartbeat to maintain connection"""
@@ -591,7 +612,8 @@ async def handle_client(websocket):
     try:
         # Authentication
         logger.info("Starting authentication process")
-        username, public_key = await authenticate(websocket)
+        auth_result = await authenticate(websocket)
+        username, public_key = auth_result if auth_result else (None, None)
         logger.info(f"Authentication result: username={username}")
 
         if not username:
