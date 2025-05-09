@@ -18,7 +18,7 @@
 
     <script>
         let ws = null;
-        const SERVER_IP = "127.0.0.1"; // Replace with Laptop 1’s IP
+        const SERVER_IP = "localhost"; // Replace with Laptop 1’s IP
 
         function setStatus(msg) {
             document.getElementById('status').innerHTML = msg;
@@ -32,16 +32,29 @@
                 return;
             }
 
-            ws = new WebSocket(`ws://${SERVER_IP}:8765`);
+            ws = new WebSocket(`wss://${SERVER_IP}:8765`);
             
             ws.onopen = () => {
-                const authMessage = JSON.stringify({
+                if(ws.readyState === WebSocket.OPEN) {
+                    const authMessage = JSON.stringify({
                     type: 'auth',
                     username: username,
                     password: password
                 });
                 ws.send(authMessage);
                 setStatus('Signing in...');
+                } else {
+                    setStatus('WebSocket not ready. Retrying...');
+                    setTimeout(() => {
+                        if(ws.readyState === WebSocket.OPEN){
+                            ws.send(authMessage);
+                            setStatus('Signing in...');
+                        } else {
+                            setStatus('WebSocket connection failed');
+                        }
+                    }, 100);
+                }
+            
             };
 
             ws.onmessage = (event) => {
