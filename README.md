@@ -60,7 +60,7 @@ to store attempts of brute-force:
 
 # IMPORTANT ISSUES UNRESOLVED
 - No Link available for online access (Unfortunately)
-- When a user leaves it doesn't show the status they left.
-- Had difficulties with encryption for sending messages
+- Unfortunately didn't have time to implement most of the phase 3 features. 
+- Had difficulties with encryption for sending messages, got decryption errors. 
 - All changelog commit history is in the github url at the top and add /commits at the end to see the history
 - I don't know how my personal account got into collaboration when I was signed in my school account the whole time, but I worked on the project solo. There was no anonymous contributor or anything, just my 2 accounts. 
