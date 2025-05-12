@@ -80,8 +80,50 @@
         let pendingFileTransfers = {};
         let fileChunkSize = 64 * 1024; // 64KB chunks
 
+        //// Export private key to JWK
+        //async function exportPrivateKey(key){
+        //    const exported = await window.crypto.subtle.exportKey("jwk", key);
+        //    return JSON.stringify(exported);
+        //}
+
+        //// Import private key from JWK
+        //async function importPrivateKey(jwkString){
+        //    const jwk = JSON.parse(jwkString);
+        //    return await window.crypto.subtle.importKey(
+        //        "jwk",
+        //        jwk,
+        //        {
+        //            name: "RSA-OAEP",
+        //            hash: "SHA-256"
+        //        },
+        //        true,
+        //        ["decrypt"]
+        //    );
+//
+        //}
+
         // Generate RSA-4096 key pair
         async function generateKeyPair(){
+           // const storedPrivateKey = sessionStorage.getItem('clientPrivateKey');
+           // const storedPublicKey = sessionStorage.getItem('clientPublicKey');
+//
+           // if(storedPrivateKey && storedPublicKey){
+           //     // Reuse existing keys
+           //     clientPrivateKey = await importPrivateKey(storedPrivateKey);
+           //     clientPublicKey = await window.crypto.subtle.importKey(
+           //         "jwk",
+           //         JSON.parse(storedPublicKey),
+           //         {
+           //             name: "RSA-OAEP",
+           //             hash: "SHA-256"
+           //         },
+           //         true,
+           //         ["encrypt"]
+           //     );
+           //     return { privateKey: clientPrivateKey, publicKey: clientPublicKey };
+           // }
+            
+            // Generate new key pair
             const keyPair = await window.crypto.subtle.generateKey(
                 {
                     name: "RSA-OAEP",
@@ -94,6 +136,13 @@
             );
             clientPrivateKey = keyPair.privateKey;
             clientPublicKey = keyPair.publicKey;
+
+            // Store keys in session storage
+            //const privateJwk = await exportPrivateKey(clientPrivateKey);
+            //const publicJWK = await window.crypto.subtle.exportKey("jwk", clientPublicKey);
+            //sesstionStorage.setItem('clientPrivateKey', privateJwk);
+            //sesstionStorage.setItem('clientPublicKey', JSON.stringify(publicJWK));
+
             return keyPair;
         }
 
@@ -125,38 +174,92 @@
         }
 
         // Decrypt message using AES-256-CBC
+        //async function decryptMessage(encryptedData, key, iv) {
+        //    // Import the AES-CBC key
+        //    const cryptoKey = await window.crypto.subtle.importKey(
+        //        "raw",
+        //        key,
+        //        { name: "AES-CBC" },
+        //        false,
+        //        ["decrypt"]
+        //    );
+//
+        //    // Decrypt the data
+        //    const decrypted = await window.crypto.subtle.decrypt(
+        //        {
+        //            name: "AES-CBC",
+        //            iv: iv
+        //        },
+        //        cryptoKey,
+        //        encryptedData
+        //    );
+        //    return new TextDecoder().decode(decrypted);
+        //}
+
+
+        // Improved decrypt message function with better error handling
         async function decryptMessage(encryptedData, key, iv) {
-            // Import the AES-CBC key
-            const cryptoKey = await window.crypto.subtle.importKey(
-                "raw",
-                key,
-                { name: "AES-CBC" },
-                false,
-                ["decrypt"]
-            );
+            try {
+                console.log(`Decrypting message - key size: ${key.byteLength}, IV size: ${iv.byteLength}`);
 
-            // Decrypt the data
-            const decrypted = await window.crypto.subtle.decrypt(
-                {
-                    name: "AES-CBC",
-                    iv: iv
-                },
-                cryptoKey,
-                encryptedData
-            );
-            return new TextDecoder().decode(decrypted);
+                // Import the AES-CBC key
+                const cryptoKey = await window.crypto.subtle.importKey(
+                    "raw",
+                    key,
+                    { name: "AES-CBC" },
+                    false,
+                    ["decrypt"]
+                );
+            
+                // Decrypt the data
+                const decrypted = await window.crypto.subtle.decrypt(
+                    {
+                        name: "AES-CBC",
+                        iv: iv
+                    },
+                    cryptoKey,
+                    encryptedData
+                );
+                
+                return new TextDecoder().decode(decrypted);
+            } catch (err) {
+                console.error('Detailed decryption error:', err);
+                throw new Error(`Decryption failed: ${err.message}`);
+            }
         }
 
-        // Decrypt AES key using RSA-OAEP
-        async function decryptKey(encryptedKey){
-            return await window.crypto.subtle.decrypt(
-                { name: "RSA-OAEP" },
-                clientPrivateKey,
-                encryptedKey
-            );
+
+        //// Decrypt AES key using RSA-OAEP
+        //async function decryptKey(encryptedKey){
+        //    return await window.crypto.subtle.decrypt(
+        //        { name: "RSA-OAEP" },
+        //        clientPrivateKey,
+        //        encryptedKey
+        //    );
+        //}
+
+        // Improved decrypt key function with better error handling
+        async function decryptKey(encryptedKey) {
+            try {
+                console.log(`Decrypting AES key with RSA - encrypted key size: ${encryptedKey.byteLength}`);
+
+                if (!clientPrivateKey) {
+                    throw new Error("Client private key not initialized");
+                }
+
+                const decryptedKey = await window.crypto.subtle.decrypt(
+                    { name: "RSA-OAEP" },
+                    clientPrivateKey,
+                    encryptedKey
+                );
+
+                console.log(`Successfully decrypted AES key, size: ${decryptedKey.byteLength}`);
+                return decryptedKey;
+            } catch (err) {
+                console.error('RSA decryption error:', err);
+                throw new Error(`Failed to decrypt AES key: ${err.message}`);
+            }
         }
-
-
 
         // File upload setup
         function setupFileUpload() {
@@ -393,23 +496,84 @@
 
 
         // Utility function to convert base64 to ArrayBuffer
+        //function base64ToArrayBuffer(base64) {
+        //    const binaryString = atob(base64);
+        //    const bytes = new Uint8Array(binaryString.length);
+        //    for (let i = 0; i < binaryString.length; i++) {
+        //        bytes[i] = binaryString.charCodeAt(i);
+        //    }
+        //    return bytes.buffer;
+        //}
+
+        // Improved base64ToArrayBuffer function with better error handling and validation
         function base64ToArrayBuffer(base64) {
-            const binaryString = atob(base64);
-            const bytes = new Uint8Array(binaryString.length);
-            for (let i = 0; i < binaryString.length; i++) {
-                bytes[i] = binaryString.charCodeAt(i);
+            try {
+                // Validate input
+                if (!base64 || typeof base64 !== 'string') {
+                    console.error('Invalid base64 input:', base64);
+                    throw new Error('Invalid base64 input');
+                }
+
+                // Some base64 strings might have padding issues, try to fix common problems
+                // Make sure the base64 string is properly padded
+                let paddedBase64 = base64;
+                while (paddedBase64.length % 4 !== 0) {
+                    paddedBase64 += '=';
+                }
+
+                // Replace URL-safe characters with standard Base64 characters if needed
+                paddedBase64 = paddedBase64.replace(/-/g, '+').replace(/_/g, '/');
+
+                console.log(`Processing base64 string (length: ${paddedBase64.length})`);
+
+                // Decode the base64 string to a binary string
+                const binaryString = atob(paddedBase64);
+                console.log(`Decoded binary string length: ${binaryString.length}`);
+
+                // Convert binary string to Uint8Array
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                    bytes[i] = binaryString.charCodeAt(i);
+                }
+
+                return bytes.buffer;
+            } catch (err) {
+                console.error('Base64 decoding error:', err);
+                console.error('Failed string:', base64);
+                throw new Error(`Base64 decoding failed: ${err.message}`);
             }
-            return bytes.buffer;
         }
 
-        // Utility function to convert ArrayBuffer to base64
+        //// Utility function to convert ArrayBuffer to base64
+        //function arrayBufferToBase64(buffer) {
+        //    let binary = '';
+        //    const bytes = new Uint8Array(buffer);
+        //    for (let i = 0; i < bytes.byteLength; i++) {
+        //        binary += String.fromCharCode(bytes[i]);
+        //    }
+        //    return btoa(binary);
+        //}
+
+        // Improved arrayBufferToBase64 function
         function arrayBufferToBase64(buffer) {
-            let binary = '';
-            const bytes = new Uint8Array(buffer);
-            for (let i = 0; i < bytes.byteLength; i++) {
-                binary += String.fromCharCode(bytes[i]);
+            try {
+                if (!buffer || !(buffer instanceof ArrayBuffer)) {
+                    console.error('Invalid buffer input:', buffer);
+                    throw new Error('Invalid ArrayBuffer input');
+                }
+
+                let binary = '';
+                const bytes = new Uint8Array(buffer);
+                for (let i = 0; i < bytes.byteLength; i++) {
+                    binary += String.fromCharCode(bytes[i]);
+                }
+
+                // Standard base64 encoding
+                return btoa(binary);
+            } catch (err) {
+                console.error('Base64 encoding error:', err);
+                throw new Error(`Base64 encoding failed: ${err.message}`);
             }
-            return btoa(binary);
         }
 
         // Decrypt file chunk
@@ -744,78 +908,283 @@
         //    }
         //}
 
+        //ws.onmessage = async (event) => {
+        //    console.log('Received:', event.data);
+        //    const data = JSON.parse(event.data);
+//
+        //    if(data.type === 'auth_success'){
+        //        serverPublicKey = await importPublicKey(data.server_public_key); // Import server's public key
+        //        appendMessage(`[SYSTEM] ${data.message}`, "global");
+//
+        //        if(data.message === 'Authentication successful'){
+        //            setStatus('Authenticated as ' + username);
+        //            // Request user list after authentication
+        //            ws.send(JSON.stringify({type: "get_users"}));
+        //        }
+//
+        //        //// Handle user joined/left notifications
+        //        //if (data.message.includes('joined') || data.message.includes('left')) {
+        //        //        // Request updated user list
+        //        //        ws.send(JSON.stringify({type: "get_users"}));
+        //        //    } 
+        //    } else if (data.type === 'message'){
+//
+        //            // Determine which conversation this belongs to
+        //            const chatTarget = data.private ? (data.username === currentUser ? data.recipient : data.username) : "global";
+        //            let messageContent;
+        //            try{
+        //                const encryptedMessage = base64ToArrayBuffer(data.message);
+        //                let aesKey;
+        //                if (data.private){
+        //                    const encryptedKey = base64ToArrayBuffer(data.key);
+        //                    aesKey = await decryptKey(encryptedKey);
+        //                } else {
+        //                    aesKey = base64ToArrayBuffer(data.key);
+        //                }
+        //                const iv = base64ToArrayBuffer(data.iv);
+        //                messageContent = await decryptMessage(encryptedMessage, aesKey, iv);
+        //            } catch (err) {
+        //                console.error('Decryption error:', err);
+        //                appendMessage(`[ERROR] Failed to decrypt message`, chatTarget);
+        //                return;
+        //            }
+        //            // Format the message safely
+        //            const formattedMessage = formatMessage(escapeHTML(messageContent));
+        //            appendMessage(`[${data.timestamp}] ${data.username}: ${formattedMessage}`, chatTarget); 
+        //            // If in a different conversation when private message arrives, indicate new message
+        //            if (data.private && chatTarget !== targetUser && data.username !== currentUser) {
+        //                const userEl = document.querySelector(`.user[data-chat="${data.username}"]`);
+        //                if (userEl) userEl.classList.add('new-message');
+        //            }
+        //    } else if (data.type === 'error'){
+        //        appendMessage(`[ERROR] ${data.message}`, "global");
+        //        setStatus(`Error: ` + data.message);
+        //    } else if(data.type === 'user_list'){
+        //        updateUserList(data.users);
+        //        onlineUsers = data.users;
+        //    } else if (data.type === 'file_init' || data.type === 'file_chunk' || data.type === 'file_complete') {
+        //        handleIncomingFile(data);
+        //    }
+        //    else if (data.type === 'file_accept') {
+        //        // Handle file accept message
+        //        const fileId = data.fileId;
+        //        if (pendingFileTransfers[fileId] && pendingFileTransfers[fileId].status === 'pending') {
+        //            console.log(`File transfer accepted for ${fileId}, starting to send chunks`);
+        //            // Start sending file chunks
+        //            sendFileChunks(fileId);
+        //        }
+//
+        //    }
+        //    if (data.message && (data.message.includes('joined') || data.message.includes('left'))) {
+        //        // Request updated user list
+        //        ws.send(JSON.stringify({type: "get_users"}));
+        //    }
+        //};
+
+        // Replace the onmessage handler with this improved version
+        //ws.onmessage = async (event) => {
+        //    console.log('Received message from server');
+//
+        //    try {
+        //        const data = JSON.parse(event.data);
+        //        console.log('Message type:', data.type);
+        //    
+        //        if (data.type === 'auth_success') {
+        //            try {
+        //                serverPublicKey = await importPublicKey(data.server_public_key);
+        //                console.log('Server public key imported successfully');
+        //                appendMessage(`[SYSTEM] ${data.message}`, "global");
+        //            
+        //                if (data.message === 'Authentication successful') {
+        //                    setStatus('Authenticated as ' + username);
+        //                    ws.send(JSON.stringify({type: "get_users"}));
+        //                }
+        //            } catch (err) {
+        //                console.error('Failed to import server public key:', err);
+        //                appendMessage('[ERROR] Authentication issue: Failed to import server public key', "global");
+        //            }
+        //        } else if (data.type === 'message') {
+        //            // Determine which conversation this belongs to
+        //            const chatTarget = data.private ? 
+        //                (data.username === currentUser ? data.recipient : data.username) : 
+        //                "global";
+//
+        //            console.log(`Message received for chat: ${chatTarget}, private: ${data.private}`);
+//
+        //            try {
+        //                // Decode the base64 encrypted message to ArrayBuffer
+        //                const encryptedMessage = base64ToArrayBuffer(data.message);
+        //                console.log(`Encrypted message size: ${encryptedMessage.byteLength} bytes`);
+//
+        //                let aesKey;
+        //                if (data.private) {
+        //                    console.log('Decrypting private message key');
+        //                    // For private messages, decrypt the AES key using our private RSA key
+        //                    const encryptedKey = base64ToArrayBuffer(data.key);
+        //                    console.log(`Encrypted key size: ${encryptedKey.byteLength} bytes`);
+        //                    aesKey = await decryptKey(encryptedKey);
+        //                } else {
+        //                    // For global messages, the key is already properly formatted
+        //                    console.log('Using global message key');
+        //                    aesKey = base64ToArrayBuffer(data.key);
+        //                }
+//
+        //                // Get the initialization vector
+        //                const iv = base64ToArrayBuffer(data.iv);
+        //                console.log(`IV size: ${iv.byteLength} bytes`);
+//
+        //                // Decrypt the actual message content
+        //                const messageContent = await decryptMessage(encryptedMessage, aesKey, iv);
+        //                console.log('Message decrypted successfully');
+//
+        //                // Format the message safely
+        //                const formattedMessage = formatMessage(escapeHTML(messageContent));
+        //                appendMessage(`[${data.timestamp}] ${data.username}: ${formattedMessage}`, chatTarget);
+//
+        //                // If in a different conversation when private message arrives, indicate new message
+        //                if (data.private && chatTarget !== targetUser && data.username !== currentUser) {
+        //                    const userEl = document.querySelector(`.user[data-chat="${data.username}"]`);
+        //                    if (userEl) userEl.classList.add('new-message');
+        //                }
+        //            } catch (err) {
+        //                console.error('Message decryption error:', err);
+        //                appendMessage(`[ERROR] Failed to decrypt message: ${err.message}`, chatTarget);
+        //            }
+        //        } else if (data.type === 'error') {
+        //            appendMessage(`[ERROR] ${data.message}`, "global");
+        //            setStatus(`Error: ` + data.message);
+        //        } else if (data.type === 'user_list') {
+        //            updateUserList(data.users);
+        //            onlineUsers = data.users;
+        //        } else if (data.type === 'file_init' || data.type === 'file_chunk' || data.type === 'file_complete') {
+        //            handleIncomingFile(data);
+        //        } else if (data.type === 'file_accept') {
+        //            // Handle file accept message
+        //            const fileId = data.fileId;
+        //            if (pendingFileTransfers[fileId] && pendingFileTransfers[fileId].status === 'pending') {
+        //                console.log(`File transfer accepted for ${fileId}, starting to send chunks`);
+        //                sendFileChunks(fileId);
+        //            }
+        //        }
+//
+        //        if (data.message && (data.message.includes('joined') || data.message.includes('left'))) {
+        //            ws.send(JSON.stringify({type: "get_users"}));
+        //        }
+        //    } catch (err) {
+        //        console.error('Error processing message:', err);
+        //        appendMessage('[ERROR] Failed to process message from server', "global");
+        //    }
+        //};
+
+        // Updated onmessage event handler to include improved error handling for messages
         ws.onmessage = async (event) => {
-            console.log('Received:', event.data);
-            const data = JSON.parse(event.data);
+            console.log('Received message from server');
 
-            if(data.type === 'auth_success'){
-                serverPublicKey = await importPublicKey(data.sever_public_key); // Import server's public key
-                appendMessage(`[SYSTEM] ${data.message}`, "global");
-
-                if(data.message === 'Authentication successful'){
-                    setStatus('Authenticated as ' + username);
-                    // Request user list after authentication
-                    ws.send(JSON.stringify({type: "get_users"}));
-                }
-
-                //// Handle user joined/left notifications
-                //if (data.message.includes('joined') || data.message.includes('left')) {
-                //        // Request updated user list
-                //        ws.send(JSON.stringify({type: "get_users"}));
-                //    } 
-            } else if (data.type === 'message'){
-
+            try {
+                const data = JSON.parse(event.data);
+                console.log('Message type:', data.type);
+            
+                if (data.type === 'auth_success') {
+                    try {
+                        serverPublicKey = await importPublicKey(data.server_public_key);
+                        console.log('Server public key imported successfully');
+                        appendMessage(`[SYSTEM] ${data.message}`, "global");
+                    
+                        if (data.message === 'Authentication successful') {
+                            setStatus('Authenticated as ' + username);
+                            ws.send(JSON.stringify({type: "get_users"}));
+                        }
+                    } catch (err) {
+                        console.error('Failed to import server public key:', err);
+                        appendMessage('[ERROR] Authentication issue: Failed to import server public key', "global");
+                    }
+                } else if (data.type === 'message') {
                     // Determine which conversation this belongs to
-                    const chatTarget = data.private ? (data.username === currentUser ? data.recipient : data.username) : "global";
-                    let messageContent;
-                    try{
+                    const chatTarget = data.private ? 
+                        (data.username === currentUser ? data.recipient : data.username) : 
+                        "global";
+
+                    console.log(`Message received for chat: ${chatTarget}, private: ${data.private}`);
+
+                    try {
+                        console.log('Message data:', {
+                            isPrivate: data.private,
+                            hasKey: !!data.key,
+                            keyLength: data.key ? data.key.length : 0,
+                            hasIv: !!data.iv,
+                            ivLength: data.iv ? data.iv.length : 0
+                        });
+
+                        // Decode the base64 encrypted message to ArrayBuffer
                         const encryptedMessage = base64ToArrayBuffer(data.message);
+                        console.log(`Encrypted message size: ${encryptedMessage.byteLength} bytes`);
+
                         let aesKey;
-                        if (data.private){
+                        if (data.private) {
+                            console.log('Decrypting private message key');
+                            if (!data.key) {
+                                throw new Error('Missing encrypted key in private message');
+                            }
+
+                            // For private messages, decrypt the AES key using our private RSA key
                             const encryptedKey = base64ToArrayBuffer(data.key);
+                            console.log(`Encrypted key size: ${encryptedKey.byteLength} bytes`);
                             aesKey = await decryptKey(encryptedKey);
                         } else {
+                            // For global messages, the key is already properly formatted
+                            console.log('Using global message key');
                             aesKey = base64ToArrayBuffer(data.key);
                         }
+
+                        // Get the initialization vector
                         const iv = base64ToArrayBuffer(data.iv);
-                        messageContent = await decryptMessage(encryptedMessage, aesKey, iv);
+                        console.log(`IV size: ${iv.byteLength} bytes`);
+
+                        // Decrypt the actual message content
+                        const messageContent = await decryptMessage(encryptedMessage, aesKey, iv);
+                        console.log('Message decrypted successfully');
+
+                        // Format the message safely
+                        const formattedMessage = formatMessage(escapeHTML(messageContent));
+                        appendMessage(`[${data.timestamp}] ${data.username}: ${formattedMessage}`, chatTarget);
+
+                        // If in a different conversation when private message arrives, indicate new message
+                        if (data.private && chatTarget !== targetUser && data.username !== currentUser) {
+                            const userEl = document.querySelector(`.user[data-chat="${data.username}"]`);
+                            if (userEl) userEl.classList.add('new-message');
+                        }
                     } catch (err) {
-                        console.error('Decryption error:', err);
-                        appendMessage(`[ERROR] Failed to decrypt message`, chatTarget);
-                        return;
+                        console.error('Message decryption error:', err);
+                        appendMessage(`[ERROR] Failed to decrypt message: ${err.message}`, chatTarget);
                     }
-                    // Format the message safely
-                    const formattedMessage = formatMessage(escapeHTML(data.message));
-                    appendMessage(`[${data.timestamp}] ${data.username}: ${formattedMessage}`, chatTarget); 
-                    // If in a different conversation when private message arrives, indicate new message
-                    if (data.private && chatTarget !== targetUser && data.username !== currentUser) {
-                        const userEl = document.querySelector(`.user[data-chat="${data.username}"]`);
-                        if (userEl) userEl.classList.add('new-message');
+                } else if (data.type === 'system') {
+                    appendMessage(`[SYSTEM] ${data.message}`, "global");
+                } else if (data.type === 'error') {
+                    appendMessage(`[ERROR] ${data.message}`, "global");
+                    setStatus(`Error: ` + data.message);
+                } else if (data.type === 'user_list') {
+                    updateUserList(data.users);
+                    onlineUsers = data.users;
+                } else if (data.type === 'file_init' || data.type === 'file_chunk' || data.type === 'file_complete') {
+                    handleIncomingFile(data);
+                } else if (data.type === 'file_accept') {
+                    // Handle file accept message
+                    const fileId = data.fileId;
+                    if (pendingFileTransfers[fileId] && pendingFileTransfers[fileId].status === 'pending') {
+                        console.log(`File transfer accepted for ${fileId}, starting to send chunks`);
+                        sendFileChunks(fileId);
                     }
-            } else if (data.type === 'error'){
-                appendMessage(`[ERROR] ${data.message}`, "global");
-                setStatus(`Error: ` + data.message);
-            } else if(data.type === 'user_list'){
-                updateUserList(data.users);
-                onlineUsers = data.users;
-            } else if (data.type === 'file_init' || data.type === 'file_chunk' || data.type === 'file_complete') {
-                handleIncomingFile(data);
-            }
-            else if (data.type === 'file_accept') {
-                // Handle file accept message
-                const fileId = data.fileId;
-                if (pendingFileTransfers[fileId] && pendingFileTransfers[fileId].status === 'pending') {
-                    console.log(`File transfer accepted for ${fileId}, starting to send chunks`);
-                    // Start sending file chunks
-                    sendFileChunks(fileId);
                 }
 
-            }
-            if (data.message && (data.message.includes('joined') || data.message.includes('left'))) {
-                // Request updated user list
-                ws.send(JSON.stringify({type: "get_users"}));
+                if (data.message && (data.message.includes('joined') || data.message.includes('left'))) {
+                    ws.send(JSON.stringify({type: "get_users"}));
+                }
+            } catch (err) {
+                console.error('Error processing message:', err);
+                appendMessage('[ERROR] Failed to process message from server', "global");
             }
         };
+
 
         ws.onclose = () => {
             appendMessage(`[SYSTEM] Connection closed`, "global");
@@ -845,32 +1214,70 @@
         setTimeout(() => connect(), RECONNECT_DELAY);
     }
 
-    // Function to send a message
+    //// Function to send a message
+    //function sendMessage() {
+    //    const messageInput = document.getElementById('message');
+    //    let message = messageInput.value.trim();
+//
+    //    if (!ws || ws.readyState !== WebSocket.OPEN){
+    //        alert('Not connected to the server');
+    //        return;
+    //    }
+    //    if (message){
+    //        
+    //        message = escapeHTML(message); // Escape HTML to prevent XSS
+//
+    //        // Construct message based on target
+    //        let msgData = { message: message };
+//
+    //        // If not global chat, send as private message
+    //        if(targetUser !== "global"){
+    //        msgData.type = "private";
+    //        msgData.recipient = targetUser;
+    //        }
+    //        ws.send(JSON.stringify(msgData));
+    //        messageInput.value = '';
+    //        console.log('Sent:', message);
+    //    }
+    //}
+    
+    // Improved function for sending private messages
     function sendMessage() {
         const messageInput = document.getElementById('message');
         let message = messageInput.value.trim();
-
-        if (!ws || ws.readyState !== WebSocket.OPEN){
+    
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
             alert('Not connected to the server');
             return;
         }
-        if (message){
-            
+        
+        if (message) {
             message = escapeHTML(message); // Escape HTML to prevent XSS
-
+        
             // Construct message based on target
-            let msgData = { message: message };
-
+            let msgData = { 
+                type: targetUser === "global" ? "message" : "private",
+                message: message 
+            };
+        
             // If not global chat, send as private message
-            if(targetUser !== "global"){
-            msgData.type = "private";
-            msgData.recipient = targetUser;
+            if (targetUser !== "global") {
+                msgData.recipient = targetUser;
+                console.log(`Sending private message to ${targetUser}`);
+            } else {
+                console.log('Sending global message');
             }
+            
             ws.send(JSON.stringify(msgData));
             messageInput.value = '';
-            console.log('Sent:', message);
+            
+            // Log the sent message in the current conversation
+            const formattedMessage = formatMessage(message);
+            appendMessage(`[${new Date().toLocaleTimeString()}] ${currentUser}: ${formattedMessage}`, targetUser);
         }
     }
+
+
 
     // Setup emoji picker
     function setupEmojiPicker() {
