@@ -24,7 +24,31 @@
             document.getElementById('status').innerHTML = msg;
         }
 
-        function signup() {
+        // Generate RSA-4096 key pair
+        async function generateKeyPair(){
+            const keyPair = await window.crypto.subtle.generateKey(
+                {
+                    name: "RSA-OAEP",
+                    modulusLength: 4096,
+                    publicExponent: new Uint8Array([0x01, 0x00, 0x01]),
+                    hash: "SHA-256"
+                },
+                true,
+                ["encrypt", "decrypt"]
+            );
+            clientPublicKey = keyPair.publicKey;
+            return keyPair;
+        }
+
+        // Export public key to PEM format
+        async function exportPublicKey(key) {
+            const exported = await window.crypto.subtle.exportKey("spki", key);
+            const pem = `-----BEGIN PUBLIC KEY-----\n${btoa(String.fromCharCode.apply(null, new Uint8Array(exported))
+                ).match(/.{1,64}/g).join('\n')}\n-----END PUBLIC KEY-----`;
+                return pem;
+        }
+
+        async function signup() {
             const username = document.getElementById('username').value;
             const password = document.getElementById('password').value;
             if (!username || !password) {
@@ -32,13 +56,18 @@
                 return;
             }
 
+            // Generate RSA key pair
+            await generateKeyPair();
+            const publicKeyPem = await exportPublicKey(clientPublicKey);
+
             ws = new WebSocket(`wss://${SERVER_IP}:8765`);
 
             ws.onopen = () => {
                 const signupMessage = JSON.stringify({
                     type: 'signup',
                     username: username,
-                    password: password
+                    password: password,
+                    public_key: publicKeyPem // Include public key
                 });
                 ws.send(signupMessage);
                 setStatus('Signing up...');
