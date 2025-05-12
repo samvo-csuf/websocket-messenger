@@ -480,28 +480,70 @@ async def signup(username, password):
                 try:
 
                     # Hash password and store
-                    password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+                    password_hash = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode('utf-8')
 
-                    if not password_hash:
-                        raise ValueError("Password hashing failed")
+                    if not password_hash or len(password_hash) < 10:
+                        raise ValueError("Password hashing failed - produced empty or invalid hash")
                     
-                    # Verify we can check the password with this hash
-                    bcrypt.checkpw(password.encode(), password_hash.encode())
+                    if not bcrypt.checkpw(password.encode(), password_hash.encode()):
+                        raise ValueError("Password verification failed after hashing failed")
+                    
+                    logger.info(f"Successfully created hash for new user {username}")
+                
 
                 except Exception as e:
                     logger.error(f"Password hashing error: {e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
                     return {"type": "error", "message": "Error processing password"}
+                
+                logger.debug(f"Inserting new user with hash length: {len(password_hash)}")
+
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS users (
+                        username_hash VARCHAR(64) PRIMARY KEY,
+                        password_hash TEXT NOT NULL
+                )
+                """)
 
                 cur.execute(
                     "INSERT INTO users (username_hash, password_hash) VALUES (%s, %s)",
                     (username_hash, password_hash)
                 )
                 conn.commit()
-                logger.info(f"New user created: {username}")
-                return {"type": "signup_success", "message": "Signup successful"}
+                try:
+                    # Verify if the user was created properly
+                    cur.execute(
+                        "SELECT * FROM users WHERE username_hash = %s",
+                        (username_hash,)
+                    )
+
+                    result = cur.fetchone()
+                    if not result:
+                        logger.error(f"User creation verification failed - user not found: {username}")
+                        return {"type": "error", "message": "User creation failed - could not find user"}
+                    
+
+                    if 'password_hash' not in result:
+                        logger.error(f"User creation verification failed - no password_hash column: {username}")
+                        return {"type": "error", "message": "User creation failed - database schema issue"}
+
+                    if not result["password_hash"]:
+                        logger.info(f"User creation verification failed - empty password_hash: {username}")
+                        return {"type": "error", "message": "User creation failed - empty password hash"}
+                    
+                except Exception as e:
+                    logger.error(f"User verification failed: str{e}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+                    return {"type": "error", "message": f"User creation verification error: str{e}"}
+                
+                logger.info(f"New user created and verified: {username}")
+                return {"type": "signup_success", "message": "User created successfully"}
     except Exception as e:
-        print(f"Signup error: {e}")
         logger.error(f"Signup error: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return {"type": "error", "message": f"Signup error: {str(e)}"}        
 
 async def authenticate(websocket):
@@ -516,6 +558,15 @@ async def authenticate(websocket):
         username = auth_data.get("username")
         password = auth_data.get("password")
         public_key_pem = auth_data.get("public_key") # Client's RSA public key
+
+        if not public_key_pem:
+            logger.warning(f"No public key provided by client {username} from {remote_address}")
+            await websocket.send(json.dumps({
+                "type": "error",
+                "message": "Missing public key during authentication"
+            }))
+            return None, None
+
 
         if auth_type == "signup":
             result = await signup(username, password)
@@ -543,8 +594,12 @@ async def authenticate(websocket):
                         (username_hash,)
                     )
                     user = cur.fetchone()
+                    logger.debug(f"Authentication for {username}: Found user record: {user is not None}")
 
-                    if user and user["password_hash"]: # Make sure user exists and has a password hash
+                    if user:
+                        logger.debug(f"Password has exists: {user['password_hash'] is not None}")
+
+                    if user and user["password_hash"] and user["password_hash"].strip(): # Make sure user exists and has a password hash
 
                         # Check password
                         stored_hash = user["password_hash"]
@@ -563,15 +618,23 @@ async def authenticate(websocket):
                                 # Send server's public key
                                 server_public_key_pem = server_public_key.public_bytes(
                                     encoding=serialization.Encoding.PEM,
-                                    format=serialization.PublicFormat.SubjectPublicKey
+                                    format=serialization.PublicFormat.SubjectPublicKeyInfo
                                 ).decode()
 
                                 await websocket.send(json.dumps({"type": "auth_success", "message": "Authentication successful", "server_public_key": server_public_key_pem}))
                                 return username, public_key # Return username after successful authentication
+                            else:
+                                logger.warning(f"Password mismatch for user {username} from {remote_address}")
+                            
                         except Exception as e:
-                            logger.error(f"Password check error for {username} from {remote_address}: {e}")
+                            logger.error(f"Password check error for user {username} from {remote_address}: {e}")
+                            import traceback
+                            logger.error(traceback.format_exc())
                     else:
-                        logger.warning(f"User {username} not found in database, attempted from {remote_address}")
+                        if user:
+                            logger.warning(f"User {username} found but has invalid password hash: '{user['password_hash']}'")
+                        else:
+                            logger.warning(f"User {username} not found in database, attempted from {remote_address}")
                     
                     # Authentication failed error
                     is_locked = await increment_failed_attempts(username, remote_address)
@@ -588,6 +651,8 @@ async def authenticate(websocket):
         
     except Exception as e:
         logger.error(f"Authentication error from {remote_address}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         await websocket.send(json.dumps({"type": "error", "message": f"Authentication error: {str(e)}"}))
         return None, None
     
